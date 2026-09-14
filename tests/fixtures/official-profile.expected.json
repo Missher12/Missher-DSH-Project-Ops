@@ -1,0 +1,19 @@
+{
+  "contexts": [
+    {
+      "role": "user",
+      "source": {
+        "kind": "plugin",
+        "plugin": "project-ops-official-profile-probe"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Profile fixture context."
+        }
+      ]
+    }
+  ],
+  "concludesTurn": true,
+  "outcome": "succeeded"
+}

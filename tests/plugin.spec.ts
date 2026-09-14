@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -53,7 +53,7 @@ function registerAgent(ctx: Context, owner: Agent): void {
 
 function call(ctx: Context, owner: Agent, name: string, arguments_: unknown, callId = 'outer') {
   return ctx.tools.execute({
-    callId: CallId(callId),
+    callId: ToolCallId(callId),
     name,
     arguments: arguments_,
     agent: owner,
@@ -66,7 +66,38 @@ afterEach(() => {
 })
 
 describe('Project Ops Cordis plugin', () => {
-  test('registers exactly six namespaced tools and removes them on disposal', async () => {
+  test.each(['success', 'failure'] as const)('forwards nested contexts and only a successful turn conclusion: %s', async outcome => {
+    const cwd = workspace()
+    const { ctx, fiber } = await setup(cwd)
+    const owner = agent(cwd)
+    registerAgent(ctx, owner)
+    const contexts = ['first instruction', 'second instruction'].map(text => createUserMessage({
+      content: [{ type: 'text' as const, text }], source: { kind: 'plugin' as const, plugin: 'project-ops-fixture' },
+    }))
+    ctx.tools.register(defineTool({
+      name: platformExecutor,
+      description: 'Native execution metadata fixture.',
+      parameters: { command: { type: 'string', required: true } },
+      output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'fixture output' }] },
+      async execute(_args, exec) {
+        for (const context of contexts) exec.deferContext(context)
+        exec.concludeTurn()
+        if (outcome === 'failure') throw new Error('native fixture failed after deferring context')
+        return { kind: 'foreground', exitCode: 0 }
+      },
+    }))
+    try {
+      const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+      const task = (listed as { value: { tasks: { id: string; manifestDigest: string }[] } }).value.tasks[0]!
+      const result = await call(ctx, owner, 'missher_project_ops_task_run', { taskId: task.id, manifestDigest: task.manifestDigest })
+      expect(result.additionalContexts).toEqual(contexts)
+      expect(result.concludesTurn).toBe(outcome === 'success' ? true : undefined)
+      expect((result as { value: { receipt: { outcome: string } } }).value.receipt.outcome)
+        .toBe(outcome === 'success' ? 'succeeded' : 'failed')
+    } finally { await fiber.dispose() }
+  })
+
+  test('registers the six existing tools plus doctor and removes them on disposal', async () => {
     const { ctx, fiber } = await setup(workspace())
     const names = ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith('missher_project_ops_'))
 
@@ -77,9 +108,21 @@ describe('Project Ops Cordis plugin', () => {
       'missher_project_ops_task_collect',
       'missher_project_ops_verification_gate',
       'missher_project_ops_capability_search',
+      'missher_project_ops_doctor',
     ])
     await fiber.dispose()
     expect(ctx.tools.schemas().some(tool => tool.name.startsWith('missher_project_ops_'))).toBe(false)
+  })
+
+  test('registers automatic Agent onboarding in the native system prompt', async () => {
+    const { ctx, fiber } = await setup(workspace())
+    const assembled = await ctx.systemPrompt.assemble()
+    const section = assembled.sections.find(row => row.name === 'missher-project-ops:agent-guidance')
+    expect(section?.text).toContain('missher_project_ops_task_plan')
+    expect(section?.text).toContain('missher_project_ops_verification_gate')
+    await fiber.dispose()
+    const after = await ctx.systemPrompt.assemble()
+    expect(after.sections.some(row => row.name === 'missher-project-ops:agent-guidance')).toBe(false)
   })
 
   test('derives the Session cwd and rejects a stale digest before shell dispatch', async () => {
@@ -313,6 +356,12 @@ describe('Project Ops Cordis plugin', () => {
     })
     expect(foreign.isError).toBe(true)
 
+    const forged = await call(ctx, owner, 'missher_project_ops_task_collect', {
+      taskId: task.id, manifestDigest: task.manifestDigest, jobId: running.jobId,
+      nestedCallId: 'forged', startedAt: running.startedAt,
+    })
+    expect(forged.isError).toBe(true)
+
     output = 'final output'
     finish({ status: 'completed', detail: 'exit code: 0' })
     const collected = await call(ctx, owner, 'missher_project_ops_task_collect', {
@@ -398,6 +447,13 @@ describe('Project Ops Cordis plugin', () => {
 
     expect(gated.isError).toBe(false)
     expect((gated as { value: { verdict: string } }).value.verdict).toBe('passed')
+    mkdirSync(join(cwd, 'src'))
+    writeFileSync(join(cwd, 'src', 'index.ts'), 'export const changed = true\n')
+    const stale = await call(ctx, owner, 'missher_project_ops_verification_gate', {
+      changedFiles: ['src/index.ts'], goal: 'verify', planDigest: plan.planDigest, receipts: [receipt],
+    })
+    expect(stale.isError).toBe(false)
+    expect((stale as { value: { verdict: string } }).value.verdict).toBe('stale')
   })
 
   test('searches only tools visible to the calling Agent scope', async () => {

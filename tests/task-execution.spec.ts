@@ -174,3 +174,9 @@ describe('task execution helpers', () => {
     expect(JSON.stringify(succeeded)).not.toContain('safe output')
   })
 })
+
+test('unknown, timeout and signal results never become success', () => {
+  for (const value of [{}, 'ok', { exitCode: 0, timedOut: true }, { exitCode: 0, signal: 'SIGTERM' }, { exitCode: 0, sandbox: { runnerFailed: true } }]) {
+    expect(createReceipt({ task: packageTask(), executorTool: 'bash', nestedCallId: 'n', startedAt: new Date().toISOString(), durationMs: 1, result: result(value) }).outcome).not.toBe('succeeded')
+  }
+})

@@ -1,3 +1,4 @@
+import { createTaskPlan } from '../src/task-planning.ts'
 import { describe, expect, test } from 'vitest'
 import {
   MAX_MANIFEST_BYTES,
@@ -40,6 +41,31 @@ function reader(files: Record<string, string | Uint8Array>): ManifestReader {
 }
 
 describe('project task discovery', () => {
+  test('excludes recognized mutating and persistent checks from automatic plans across task families', async () => {
+    const result = await discoverProjectTasks(reader({
+      'package.json': JSON.stringify({ packageManager: 'npm@10', scripts: {
+        test: 'vitest run', 'lint:fix': 'eslint --fix .', 'test:update': 'vitest -u', 'test:watch': 'vitest --watch', lint: 'eslint --fix .',
+      } }),
+      Makefile: 'test-watch:\n\ttool watch\n',
+      justfile: 'test-update:\n  tool update\n',
+    }))
+    expect(createTaskPlan(result.tasks, ['src/a.ts'], 'verify', result.diagnostics).tasks.map(row => row.id)).toEqual(['package:test'])
+    expect(result.tasks.filter(row => row.id !== 'package:test').every(row => row.runnable && row.automatic === false)).toBe(true)
+  })
+
+  test('discovers indentationless pnpm lists and reports malformed indented entries', async () => {
+    const files = {
+      'package.json': JSON.stringify({ packageManager: 'pnpm@10' }),
+      'pnpm-workspace.yaml': 'packages:\n- packages/*\n',
+      'packages/app/package.json': JSON.stringify({ scripts: { test: 'node test.js' } }),
+    }
+    const result = await discoverProjectTasks(reader(files))
+    expect(result.tasks.map(row => row.id)).toEqual(['package@packages/app:test'])
+    expect(result.diagnostics).toEqual([])
+    files['pnpm-workspace.yaml'] = 'packages:\n  packages/*\n'
+    expect((await discoverProjectTasks(reader(files))).diagnostics.some(row => row.code === 'unsupported-workspace-syntax')).toBe(true)
+  })
+
   test('discovers declared package, Make, and Just tasks in stable order', async () => {
     const result = await discoverProjectTasks(reader({
       'package.json': JSON.stringify({ packageManager: 'pnpm@11.7.0', scripts: { test: 'vitest', build: 'tsc' } }),
@@ -212,4 +238,75 @@ describe('project task discovery', () => {
       message: 'Workspace discovery evaluated the first 128 patterns.',
     })
   })
+})
+
+test('invalidates inherited runner and root configuration changes', async () => {
+  const files = {
+    'package.json': JSON.stringify({ packageManager: 'npm@11.0.0', workspaces: ['packages/*'] }),
+    'packages/a/package.json': JSON.stringify({ scripts: { test: 'true' } }),
+    '.npmrc': 'ignore-scripts=false',
+  }
+  const before = await discoverProjectTasks(reader(files))
+  for (const change of [
+    { '.npmrc': 'ignore-scripts=true' },
+    { 'package.json': JSON.stringify({ packageManager: 'pnpm@11.7.0', workspaces: ['packages/*'] }) },
+  ]) {
+    const after = await discoverProjectTasks(reader({ ...files, ...change }))
+    expect(after.tasks[0]!.manifestDigest).not.toBe(before.tasks[0]!.manifestDigest)
+  }
+})
+
+test('propagates affected packages through differing purposes and scriptless intermediates', async () => {
+  const discovered = await discoverProjectTasks(reader({
+    'package.json': JSON.stringify({ packageManager: 'npm@11.0.0', workspaces: ['packages/*'] }),
+    'packages/a/package.json': JSON.stringify({ name: 'a', scripts: { build: 'true' } }),
+    'packages/b/package.json': JSON.stringify({ name: 'b', dependencies: { a: '*' } }),
+    'packages/c/package.json': JSON.stringify({ name: 'c', dependencies: { b: '*' }, scripts: { test: 'true' } }),
+  }))
+  expect(createTaskPlan(discovered.tasks, ['packages/a/src/a.ts'], 'verify').tasks.map(t => t.id))
+    .toEqual(['package@packages/c:test'])
+})
+
+test('propagates cancellation during file reads', async () => {
+  const controller = new AbortController()
+  const source = reader({})
+  source.readCandidate = async () => { controller.abort(); controller.signal.throwIfAborted(); return undefined }
+  await expect(discoverProjectTasks(source, controller.signal)).rejects.toThrow()
+})
+
+test('does not fall back from an explicitly unsupported manager', async () => {
+  const result = await discoverProjectTasks(reader({
+    'package.json': JSON.stringify({ packageManager: 'unknown@1', scripts: { test: 'true' } }),
+    'package-lock.json': '{}',
+  }))
+  expect(result.tasks[0]!.runnable).toBe(false)
+})
+
+test('reports unsupported workspace YAML instead of silently accepting a partial plan', async () => {
+  const discovered = await discoverProjectTasks(reader({
+    'package.json': JSON.stringify({ packageManager: 'pnpm@11.7.0', scripts: { test: 'true' } }),
+    'pnpm-workspace.yaml': "packages: ['apps/*']",
+  }))
+  expect(discovered.diagnostics.some(row => row.code === 'unsupported-workspace-syntax')).toBe(true)
+})
+
+test('parses comments in supported pnpm workspace block lists', async () => {
+  const discovered = await discoverProjectTasks(reader({
+    'package.json': JSON.stringify({ packageManager: 'pnpm@11.7.0' }),
+    'pnpm-workspace.yaml': "packages: # comment\n  - 'apps/*' # comment\n",
+    'apps/a/package.json': JSON.stringify({ scripts: { test: 'true' } }),
+  }))
+  expect(discovered.tasks.map(row => row.id)).toEqual(['package@apps/a:test'])
+  expect(discovered.diagnostics).toEqual([])
+})
+
+test('uses nested scriptless package boundaries when selecting dependents', async () => {
+  const discovered = await discoverProjectTasks(reader({
+    'package.json': JSON.stringify({ packageManager: 'npm@11.0.0', workspaces: ['packages/*', 'packages/a/nested'] }),
+    'packages/a/package.json': JSON.stringify({ name: 'a', scripts: { test: 'true' } }),
+    'packages/a/nested/package.json': JSON.stringify({ name: 'nested' }),
+    'packages/c/package.json': JSON.stringify({ name: 'c', dependencies: { nested: '*' }, scripts: { test: 'true' } }),
+  }))
+  expect(createTaskPlan(discovered.tasks, ['packages/a/nested/src/a.ts'], 'verify').tasks.map(row => row.id))
+    .toEqual(['package@packages/c:test'])
 })

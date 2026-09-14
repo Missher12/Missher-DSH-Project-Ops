@@ -52,7 +52,7 @@ function taskOrder(left: ProjectTask, right: ProjectTask): number {
 }
 
 function affectedWorkspaces(tasks: readonly ProjectTask[], changedFiles: readonly string[]): string[] {
-  const workspaces = [...new Set(tasks.map(task => task.workspace).filter(workspace => workspace !== '.'))]
+  const workspaces = [...new Set(tasks.flatMap(task => [task.workspace, ...task.workspaceDependencies ?? []]).filter(workspace => workspace !== '.'))]
     .sort((left, right) => right.length - left.length || left.localeCompare(right, 'en'))
   const affected = new Set<string>()
   let rootChange = false
@@ -69,7 +69,7 @@ function affectedWorkspaces(tasks: readonly ProjectTask[], changedFiles: readonl
     changed = false
     for (const task of tasks) {
       if (task.workspace === '.' || affected.has(task.workspace)) continue
-      if (task.dependsOn.some(id => {
+      if (task.workspaceDependencies?.some(workspace => affected.has(workspace)) || task.dependsOn.some(id => {
         const dependency = byId.get(id)
         return dependency !== undefined && dependency.workspace !== '.' && affected.has(dependency.workspace)
       })) {
@@ -89,7 +89,7 @@ function dependencyClosure(initial: readonly ProjectTask[], tasks: readonly Proj
     const task = pending.pop()!
     for (const id of task.dependsOn) {
       const dependency = byId.get(id)
-      if (dependency === undefined || !dependency.runnable || selected.has(id)) continue
+      if (dependency === undefined || !dependency.runnable || dependency.automatic === false || selected.has(id)) continue
       selected.set(id, dependency)
       pending.push(dependency)
     }
@@ -141,22 +141,27 @@ export function createTaskPlan(
   tasks: readonly ProjectTask[],
   changedFileInput: readonly string[],
   goal: PlanGoal,
+  discoveryDiagnostics: readonly DiscoveryDiagnostic[] = [],
 ): TaskPlan {
   if (!(goal in GOAL_PURPOSES)) throw new Error('goal must be verify, build, or all')
   const changedFiles = normalizeChangedFiles(changedFileInput)
   const workspaces = affectedWorkspaces(tasks, changedFiles)
   const workspaceSet = new Set(workspaces)
   const purposes = GOAL_PURPOSES[goal]
-  const initial = tasks.filter(task => task.runnable && purposes.has(task.purpose)
+  const initial = tasks.filter(task => task.runnable && task.automatic !== false && purposes.has(task.purpose)
     && (task.workspace === '.' || workspaceSet.has(task.workspace)))
-  const diagnostics: DiscoveryDiagnostic[] = []
+  const diagnostics: DiscoveryDiagnostic[] = [...discoveryDiagnostics]
   const planned = topologicalOrder(dependencyClosure(initial, tasks), diagnostics)
+  if (planned.some(task => task.dependsOn.some(id => tasks.find(candidate => candidate.id === id)?.automatic === false))) {
+    diagnostics.push({ source: 'all', code: 'manual-task-dependency', message: 'An automatic task depends on a task requiring explicit execution.' })
+  }
   const changedFilesDigest = digest(changedFiles)
   const planProjection = {
     planVersion: 1,
     goal,
     changedFilesDigest,
     affectedWorkspaces: workspaces,
+    diagnostics: diagnostics.map(row => row.code),
     tasks: planned.map(task => ({
       id: task.id,
       manifestDigest: task.manifestDigest,

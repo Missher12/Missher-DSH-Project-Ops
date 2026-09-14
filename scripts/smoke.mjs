@@ -15,9 +15,11 @@ import { homedir, tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { lockedHostDependencies } from './host-dependencies.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const require = createRequire(import.meta.url)
+const hostRoot = process.env.PROJECT_OPS_HOST_ROOT
+const require = createRequire(hostRoot ? join(hostRoot, 'package.json') : import.meta.url)
 const dshPackageRoot = dirname(require.resolve('@deepseek-ai/dsh/package.json'))
 const dshCli = join(dshPackageRoot, 'lib', 'bin.js')
 const expectedEntries = [
@@ -26,10 +28,12 @@ const expectedEntries = [
   'package/README.md',
   'package/README.zh.md',
   'package/cordis.patch.yml',
-  'package/lib/index.d.ts',
-  'package/lib/index.js',
+  'package/docs/AGENT_USAGE.md',
+  'package/docs/CORDIS_INTEGRATION.md',
+  'package/docs/OFFICIAL_COMPAT.md',
+  ...readdirSync(join(pluginRoot, 'lib')).filter(name => /\.(?:js|d\.ts)$/u.test(name)).map(name => `package/lib/${name}`),
   'package/package.json',
-]
+].sort()
 const expectedPatch = '- insert:\n    - id: missher-project-ops\n      name: dsh-project-ops\n'
 
 function invariant(condition, message) {
@@ -64,154 +68,92 @@ function readProfileManifest(home, profile) {
   return JSON.parse(readFileSync(join(home, 'profiles', profile, 'package.json'), 'utf8'))
 }
 
-async function exercisePackedPlugin(entry, workspace) {
-  const projectOps = await import(pathToFileURL(entry).href)
-  const definitions = new Map()
-  const jobRecords = new Map()
-  const signal = new AbortController().signal
-  const shellName = process.platform === 'win32' ? 'pwsh' : 'bash'
-  const shellSchema = {
-    name: shellName,
-    description: 'Smoke shell.',
-    parameters: {
-      type: 'object',
-      properties: {
-        command: { type: 'string' },
-        description: { type: 'string' },
-        workdir: { type: 'string' },
-        run_in_background: { type: 'boolean' },
-      },
-    },
+async function exercisePackedPlugin(entry, workspace, home) {
+  const cliRequire = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
+  const baseRequire = createRequire(cliRequire.resolve('@deepseek-ai/dsh-base/package.json'))
+  const bashRequire = createRequire(baseRequire.resolve('@deepseek-ai/dsh-bash-sandbox'))
+  const load = async (name, resolver = require) => import(pathToFileURL(resolver.resolve(name)).href)
+  const { Context } = await load('@deepseek-ai/cordis')
+  const ctx = new Context()
+  const fibers = []
+  const mount = async (module, config = {}) => fibers.push(await ctx.plugin(module.default ?? module, config))
+  try {
+    await mount(await load('@deepseek-ai/dsh-agent'))
+    await mount(await load('@deepseek-ai/dsh-jobs-local'))
+    await mount(await load('@deepseek-ai/dsh-system-prompt'))
+    await mount(await load('@deepseek-ai/dsh-tools'))
+    await mount(await load('@deepseek-ai/dsh-fs-local'), { cwd: workspace, diffBasisMaxBytes: 1048576 })
+    await mount(await load('@deepseek-ai/dsh-subprocess-local', baseRequire))
+    await mount(await load('@deepseek-ai/dsh-shell-env', baseRequire), { dshHome: home })
+    await mount(await load(process.platform === 'win32' ? '@deepseek-ai/dsh-pwsh-local' : '@deepseek-ai/dsh-bash-local', process.platform === 'win32' ? cliRequire : bashRequire), {
+      cwd: workspace, timeoutMs: 1000, maxTimeoutMs: 2000, graceMs: 100,
+    })
+    await mount(await load(process.platform === 'win32' ? '@deepseek-ai/dsh-tool-pwsh' : '@deepseek-ai/dsh-tool-bash', cliRequire))
+    await mount(await load('@deepseek-ai/dsh-tool-jobs', cliRequire), { completionDelivery: 'quiet' })
+    await mount(await import(pathToFileURL(entry).href), { snapshotOutputDirectories: ['packages/app/.project-ops-output'] })
+    const promptService = ctx.get('systemPrompt')
+    invariant(promptService !== undefined, 'native systemPrompt service is missing')
+    const prompt = await promptService.assemble()
+    invariant(prompt.sections.some(section => section.name === 'missher-project-ops:agent-guidance'), 'Project Ops Agent guidance was not registered in systemPrompt')
+    const owner = { id: 'smoke-owner', ctx, session: { id: 'smoke-owner', header: { id: 'smoke-owner', cwd: workspace } }, inject() {} }
+    const stranger = { ...owner, id: 'smoke-stranger', session: { id: 'smoke-stranger', header: { id: 'smoke-stranger', cwd: workspace } } }
+    ctx.agents.register(owner)
+    ctx.agents.register(stranger)
+    let sequence = 0
+    const call = async (name, args, agent = owner) => {
+      const result = await ctx.tools.execute({ name, arguments: args, agent, callId: `smoke-${++sequence}`, signal: new AbortController().signal })
+      invariant(!result.isError, `native ${name} failed: ${JSON.stringify(result.content)}`)
+      return result.value
+    }
+    const planned = await call('missher_project_ops_task_plan', { changedFiles: ['packages/app/src/index.js'], goal: 'verify' })
+    const task = planned.tasks.find(row => row.id === 'package@packages/app:verify')
+    invariant(task !== undefined, 'installed plugin did not plan workspace verification')
+    const ran = await call('missher_project_ops_task_run', { taskId: task.id, manifestDigest: task.manifestDigest, mode: 'auto', waitMs: 1000 })
+    const collect = receipt => call('missher_project_ops_task_collect', {
+      taskId: receipt.taskId, manifestDigest: receipt.manifestDigest, jobId: receipt.jobId,
+      nestedCallId: receipt.nestedCallId, startedAt: receipt.startedAt, waitMs: 10000,
+    })
+    const terminal = ran.receipt.outcome === 'running' ? await collect(ran.receipt) : ran
+    invariant(terminal.receipt.outcome === 'succeeded', 'native job did not succeed')
+    invariant(existsSync(join(workspace, 'packages/app/.project-ops-output/project-ops-smoke.marker')), 'workspace script did not execute')
+    const gate = await call('missher_project_ops_verification_gate', {
+      changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest,
+      receipts: [ran.receipt, terminal.receipt],
+    })
+    invariant(gate.verdict === 'passed', 'native verification gate did not pass')
+    const readiness = await call('missher_project_ops_doctor', {})
+    invariant(readiness.foreground && readiness.sourceSnapshot, 'native readiness failed')
+    writeFileSync(join(workspace, 'packages/app/src/index.js'), 'export const changed = true\n')
+    const sourceStale = await call('missher_project_ops_verification_gate', { changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest, receipts: [terminal.receipt] })
+    invariant(sourceStale.verdict === 'stale', 'source edit accepted old evidence')
+    writeFileSync(join(workspace, 'packages/app/src/index.js'), 'export {}\n')
+    const marker = join(workspace, 'packages/app/.project-ops-output/project-ops-smoke.marker')
+    rmSync(marker)
+    rmSync(join(workspace, 'packages/app/.project-ops-output'), { recursive: true })
+    const removeGuard = ctx.on('tools/pre-execute', async (exec, next) =>
+      exec.name === (process.platform === 'win32' ? 'pwsh' : 'bash') ? { kind: 'deny', reason: 'smoke policy denial' } : next())
+    const blocked = await call('missher_project_ops_task_run', { taskId: task.id, manifestDigest: task.manifestDigest })
+    invariant(blocked.receipt.outcome !== 'succeeded' && !existsSync(marker), 'native policy denial did not prevent dispatch')
+    removeGuard()
+    const listed = await call('missher_project_ops_task_list', {})
+    const long = listed.tasks.find(row => row.name === 'long')
+    const started = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest, mode: 'auto', waitMs: 1 })
+    invariant(started.receipt.outcome === 'running', 'bounded wait must leave native job running')
+    const denied = await ctx.tools.execute({ name: 'job_kill', arguments: { job_id: started.receipt.jobId }, agent: stranger, callId: 'stranger-kill', signal: new AbortController().signal })
+    invariant(denied.isError, 'native Jobs owner fence permitted stranger cancellation')
+    await call('job_kill', { job_id: started.receipt.jobId })
+    invariant((await collect(started.receipt)).receipt.outcome === 'aborted', 'native cancellation did not settle aborted')
+    const timed = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest, mode: 'foreground' })
+    invariant(timed.receipt.outcome !== 'succeeded', 'native timeout became success')
+    writeFileSync(join(workspace, '.npmrc'), 'ignore-scripts=true\n')
+    const stale = await call('missher_project_ops_verification_gate', {
+      changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest, receipts: [terminal.receipt],
+    })
+    invariant(stale.verdict === 'stale', 'changed configuration accepted old receipt')
+    process.stdout.write(`native-runtime: PASS ${process.platform}/${process.arch}, Harness 0.1.5-rc.2, real Tools/Jobs/subprocess, policy denial, owner fence, wait, kill, timeout, stale config\n`)
+  } finally {
+    for (const fiber of fibers.reverse()) await fiber.dispose()
   }
-  const fakeFileSystem = {
-    async lstat(name, options) {
-      const target = resolve(options?.cwd ?? workspace, name)
-      if (!existsSync(target)) return undefined
-      const stat = lstatSync(target)
-      return {
-        type: stat.isSymbolicLink() ? 'symlink' : stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'other',
-        size: stat.size,
-      }
-    },
-    async resolve(name, options) {
-      return resolve(options?.cwd ?? workspace, name)
-    },
-    contains(parent, child) {
-      const path = relative(parent, child)
-      return path === '' || (!path.startsWith('..') && !isAbsolute(path))
-    },
-    processPath(target) {
-      return target
-    },
-    async listDir(target) {
-      return readdirSync(target, { withFileTypes: true })
-        .sort((left, right) => left.name.localeCompare(right.name, 'en'))
-        .map(entry => ({
-          name: entry.name,
-          type: entry.isFile() ? 'file' : entry.isDirectory() ? 'directory' : 'other',
-          target: resolve(target, entry.name),
-        }))
-    },
-    async readBytes(target, _signal, maximum) {
-      const bytes = readFileSync(target)
-      return new Uint8Array(bytes.subarray(0, maximum))
-    },
-  }
-  const fakeTools = {
-    register(definition) {
-      definitions.set(definition.name, definition)
-    },
-    get(name) {
-      return name === shellName ? shellSchema : definitions.get(name)
-    },
-    schemas() {
-      return [...definitions.values(), shellSchema]
-    },
-    async execute(request) {
-      const command = request.arguments.command
-      const child = process.platform === 'win32'
-        ? spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-Command', command], { cwd: request.arguments.workdir, encoding: 'utf8' })
-        : spawnSync('/bin/bash', ['-lc', command], { cwd: request.arguments.workdir, encoding: 'utf8' })
-      if (child.error !== undefined) throw child.error
-      const output = `${child.stdout ?? ''}${child.stderr ?? ''}`
-      if (request.arguments.run_in_background === true) {
-        const jobId = `${shellName}-1`
-        jobRecords.set(jobId, {
-          snapshot: {
-            id: jobId,
-            kind: shellName,
-            label: command,
-            status: 'completed',
-            detail: `exit code: ${child.status ?? 1}`,
-            startedAt: Date.now(),
-            finishedAt: Date.now(),
-            reported: false,
-          },
-          output,
-        })
-        return {
-          isError: false,
-          content: [{ type: 'text', text: `started background job ${jobId}` }],
-          value: { kind: 'background', jobId },
-        }
-      }
-      return {
-        isError: false,
-        content: [{ type: 'text', text: output }],
-        value: { kind: 'foreground', exitCode: child.status ?? 1 },
-      }
-    },
-  }
-  const fakeJobs = {
-    async wait(id) {
-      return jobRecords.get(id).snapshot
-    },
-    get(id) {
-      return jobRecords.get(id).snapshot
-    },
-    read(id) {
-      const record = jobRecords.get(id)
-      const text = record.output
-      record.output = ''
-      record.snapshot.reported = true
-      return { text, snapshot: { ...record.snapshot } }
-    },
-  }
-  projectOps.apply({ fs: fakeFileSystem, tools: fakeTools, jobs: fakeJobs })
-  const owner = { id: 'project-ops-smoke-agent', session: { header: { cwd: workspace } } }
-  const exec = {
-    agent: owner,
-    callId: 'project-ops-smoke',
-    rootCallId: 'project-ops-smoke',
-    token: {},
-    signal,
-  }
-  const listed = await definitions.get('missher_project_ops_task_list').execute({}, exec)
-  invariant(listed.tasks.length === 1, 'packed plugin did not discover exactly one temporary workspace task')
-  const task = listed.tasks.find(candidate => candidate.id === 'package@packages/app:verify')
-  invariant(task !== undefined, 'packed plugin did not discover the temporary workspace task')
-  const planned = await definitions.get('missher_project_ops_task_plan').execute({
-    changedFiles: ['packages/app/src/index.js'],
-    goal: 'verify',
-  }, exec)
-  invariant(planned.tasks.some(candidate => candidate.id === task.id), 'packed plugin did not plan the affected workspace task')
-  const result = await definitions.get('missher_project_ops_task_run').execute({
-    taskId: task.id,
-    manifestDigest: task.manifestDigest,
-    mode: 'auto',
-    waitMs: 100,
-  }, exec)
-  invariant(result.receipt.outcome === 'succeeded', `packed plugin receipt outcome was ${result.receipt.outcome}`)
-  invariant(result.receipt.taskId === task.id, 'packed plugin receipt task id differs')
-  invariant(result.receipt.executionMode === 'background', 'packed plugin did not use the existing background route')
-  const gate = await definitions.get('missher_project_ops_verification_gate').execute({
-    changedFiles: ['packages/app/src/index.js'],
-    goal: 'verify',
-    planDigest: planned.planDigest,
-    receipts: [result.receipt],
-  }, exec)
-  invariant(gate.verdict === 'passed', `packed plugin verification gate was ${gate.verdict}`)
-  invariant(existsSync(join(workspace, 'packages', 'app', 'project-ops-smoke.marker')), 'temporary workspace script did not execute')
 }
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'dsh-project-ops-smoke-'))
@@ -222,7 +164,10 @@ const liveHome = join(homedir(), '.dsh')
 const liveBefore = directorySentinel(liveHome)
 const cli = [dshCli]
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const isolatedEnv = { ...process.env, DSH_HOME: temporaryHome }
+const isolatedEnv = { ...process.env, DSH_HOME: temporaryHome,
+  ...hostRoot ? { npm_config_legacy_peer_deps: 'true', npm_config_prefer_offline: 'true' } : {} }
+const originalDshHome = process.env.DSH_HOME
+process.env.DSH_HOME = temporaryHome
 
 try {
   mkdirSync(packDir)
@@ -275,11 +220,6 @@ try {
   mkdirSync(workspace)
   mkdirSync(runtimeRoot)
   run('tar', ['-xzf', archive, '-C', runtimeRoot])
-  symlinkSync(
-    join(pluginRoot, 'node_modules'),
-    join(runtimeRoot, 'package', 'node_modules'),
-    process.platform === 'win32' ? 'junction' : 'dir',
-  )
   writeFileSync(join(workspace, 'package.json'), JSON.stringify({
     name: 'project-ops-smoke-root',
     private: true,
@@ -292,7 +232,8 @@ try {
     name: '@smoke/app',
     private: true,
     scripts: {
-      verify: 'node -e "require(\'node:fs\').writeFileSync(\'project-ops-smoke.marker\', \'ran\')"',
+      long: 'node -e "setTimeout(() => {}, 60000)"',
+      verify: 'node -e "require(\'node:fs\').mkdirSync(\'.project-ops-output\', { recursive: true }); require(\'node:fs\').writeFileSync(\'.project-ops-output/project-ops-smoke.marker\', \'ran\')"',
     },
   }))
   const profileDir = join(temporaryHome, 'profiles', profile)
@@ -303,7 +244,16 @@ try {
       === createHash('sha256').update(readFileSync(packedEntry)).digest('hex'),
     'installed entry bytes differ from the packed entry',
   )
-  await exercisePackedPlugin(packedEntry, workspace)
+  // Supply host peers to the installed Bundle from the pinned validation runtime.
+  const installedPackage = dirname(dirname(installedEntry))
+  if (hostRoot) {
+    // Install declared host peers in the isolated Profile, with no developer dependency links.
+    const peers = lockedHostDependencies(pluginRoot)
+    run(npmCommand, ['install', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund', ...peers], { cwd: profileDir, env: isolatedEnv, shell: process.platform === 'win32' })
+  } else if (!existsSync(join(installedPackage, 'node_modules'))) {
+    symlinkSync(join(pluginRoot, 'node_modules'), join(installedPackage, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
+  }
+  await exercisePackedPlugin(installedEntry, workspace, temporaryHome)
 
   run(process.execPath, [...cli, 'plugin', '--profile', profile, 'remove', 'dsh-project-ops'], { env: isolatedEnv })
   const removed = readProfileManifest(temporaryHome, profile)
@@ -311,7 +261,10 @@ try {
   invariant(!removed.dsh?.profile?.bundles?.includes('dsh-project-ops'), 'temporary Profile Bundle layer survived removal')
   invariant(directorySentinel(liveHome) === liveBefore, 'live ~/.dsh top-level sentinel changed')
 
-  process.stdout.write('project-ops-smoke: PASS archive, isolated install, composition, workspace auto receipt, verification gate, removal, live-home sentinel\n')
+  process.stdout.write(`archive-sha256: ${createHash('sha256').update(readFileSync(archive)).digest('hex')}\n`)
+  process.stdout.write('project-ops-smoke: PASS archive, isolated install, composition, workspace auto receipt, source/config freshness, verification gate, removal, live-home sentinel\n')
 } finally {
+  if (originalDshHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = originalDshHome
   rmSync(temporaryRoot, { recursive: true, force: true })
 }

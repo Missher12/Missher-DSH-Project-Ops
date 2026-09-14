@@ -1,5 +1,4 @@
-import type { ProjectTask } from './contracts.ts'
-import type { ExecutionReceipt } from './task-execution.ts'
+import type { ExecutionReceipt, ProjectTask } from './contracts.ts'
 import type { TaskPlan } from './task-planning.ts'
 
 export type VerificationVerdict = 'passed' | 'pending' | 'failed' | 'stale'
@@ -17,6 +16,8 @@ export interface VerificationGate {
 }
 
 const REASON_ORDER = [
+  'discovery-incomplete',
+  'no-required-tasks',
   'plan-digest-mismatch',
   'task-set-changed',
   'manifest-changed',
@@ -26,7 +27,7 @@ const REASON_ORDER = [
   'unsuccessful-receipt',
 ] as const
 
-function latestReceipt(receipts: readonly ExecutionReceipt[]): ExecutionReceipt | undefined {
+export function latestReceipt(receipts: readonly ExecutionReceipt[]): ExecutionReceipt | undefined {
   const risk: Record<ExecutionReceipt['outcome'], number> = {
     succeeded: 0,
     running: 1,
@@ -35,7 +36,13 @@ function latestReceipt(receipts: readonly ExecutionReceipt[]): ExecutionReceipt 
     aborted: 4,
     unavailable: 5,
   }
-  return [...receipts].sort((left, right) => {
+  // Collapse each dispatch before comparing attempts; a pairwise special case
+  // would make the sort non-transitive when different jobs share a timestamp.
+  const terminalDispatches = new Set(receipts.filter(receipt => receipt.outcome !== 'running')
+    .map(receipt => JSON.stringify([receipt.startedAt, receipt.nestedCallId, receipt.jobId])))
+  const candidates = receipts.filter(receipt => receipt.outcome !== 'running'
+    || !terminalDispatches.has(JSON.stringify([receipt.startedAt, receipt.nestedCallId, receipt.jobId])))
+  return [...candidates].sort((left, right) => {
     const time = Date.parse(right.startedAt) - Date.parse(left.startedAt)
     if (time !== 0) return time
     const outcome = risk[right.outcome] - risk[left.outcome]
@@ -57,12 +64,14 @@ export function evaluateVerificationGate(
 ): VerificationGate {
   if (!/^[a-f0-9]{64}$/u.test(expectedPlanDigest)) throw new Error('planDigest must be a lowercase SHA-256 digest')
   for (const receipt of receipts) {
-    if (receipt.receiptVersion !== 2 || !Number.isFinite(Date.parse(receipt.startedAt))) {
-      throw new Error('receipts must contain valid version-2 execution receipts')
+    if (![2, 3].includes(receipt.receiptVersion) || !Number.isFinite(Date.parse(receipt.startedAt))) {
+      throw new Error('receipts must contain valid version-2 or version-3 execution receipts')
     }
   }
 
   const reasons = new Set<string>()
+  if (plan.diagnostics.length > 0) reasons.add('discovery-incomplete')
+  if (plan.tasks.length === 0) reasons.add('no-required-tasks')
   const requiredTaskIds = plan.tasks.map(task => task.id)
   const currentById = new Map(tasks.map(task => [task.id, task] as const))
   const receiptByTask = new Map<string, ExecutionReceipt>()
@@ -108,7 +117,7 @@ export function evaluateVerificationGate(
     if (receipt.outcome === 'running') {
       runningTaskIds.push(planned.id)
       reasons.add('running-receipt')
-    } else if (receipt.outcome !== 'succeeded') {
+    } else if (receipt.outcome !== 'succeeded' || receipt.exitCode !== 0) {
       failedTaskIds.push(planned.id)
       reasons.add('unsuccessful-receipt')
     }
@@ -117,9 +126,9 @@ export function evaluateVerificationGate(
   const stale = expectedPlanDigest !== plan.planDigest || staleTaskIds.length > 0
   const verdict: VerificationVerdict = stale
     ? 'stale'
-    : failedTaskIds.length > 0
+    : failedTaskIds.length > 0 || plan.diagnostics.length > 0
       ? 'failed'
-      : missingTaskIds.length > 0 || runningTaskIds.length > 0
+      : missingTaskIds.length > 0 || runningTaskIds.length > 0 || plan.tasks.length === 0
         ? 'pending'
         : 'passed'
   return {

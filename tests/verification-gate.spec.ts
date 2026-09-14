@@ -140,3 +140,22 @@ describe('verification gate', () => {
     expect(serialized).not.toContain('executorTool')
   })
 })
+
+test('terminal collection supersedes running evidence from the same dispatch', () => {
+  const row = task('package:test')
+  const plan = createTaskPlan([row], ['src/a.ts'], 'verify')
+  expect(evaluateVerificationGate(plan, [row], [receipt(row, 'running'), receipt(row, 'succeeded')]).verdict).toBe('passed')
+})
+
+test('empty or incomplete discovery cannot pass verification', () => {
+  expect(evaluateVerificationGate(createTaskPlan([], ['a.ts'], 'verify'), [], []).verdict).toBe('pending')
+  const plan = createTaskPlan([], ['a.ts'], 'verify', [{ source: 'all', code: 'task-limit', message: 'bounded' }])
+  expect(evaluateVerificationGate(plan, [], []).verdict).toBe('failed')
+})
+
+test('success without a zero exit code cannot pass verification', () => {
+  const row = task('package:test')
+  const plan = createTaskPlan([row], ['a.ts'], 'verify')
+  const evidence = { ...receipt(row, 'succeeded'), exitCode: 2 }
+  expect(evaluateVerificationGate(plan, [row], [evidence]).verdict).toBe('failed')
+})

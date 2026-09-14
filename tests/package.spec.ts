@@ -24,9 +24,17 @@ describe('Bundle package', () => {
       peerDependencies: Record<string, string>
       peerDependenciesMeta: Record<string, { optional?: boolean }>
     }
-    expect(manifest.version).toBe('0.2.0')
-    expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.1.1-rc.2')
+    expect(manifest.version).toBe('0.3.1')
+    expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.1.5-rc.2')
     expect(Object.keys(manifest.peerDependenciesMeta).sort()).toEqual(Object.keys(manifest.peerDependencies).sort())
     expect(Object.values(manifest.peerDependenciesMeta).every(meta => meta.optional === true)).toBe(true)
+  })
+
+  test('ships a concrete Agent onboarding contract', () => {
+    const guide = readFileSync(resolve(root, 'docs/AGENT_USAGE.md'), 'utf8')
+    expect(guide).toContain('missher_project_ops_task_list')
+    expect(guide).toContain('missher_project_ops_task_plan')
+    expect(guide).toContain('missher_project_ops_verification_gate')
+    expect(guide).toContain('systemPrompt')
   })
 })

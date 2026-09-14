@@ -60,6 +60,7 @@ async function readManifest(
   try {
     bytes = await reader.readCandidate(name, signal)
   } catch {
+    signal?.throwIfAborted()
     diagnostics.push(diagnostic(source, 'manifest-read-failed', `Could not read ${name.split('/').at(-1) ?? 'manifest'}.`))
     return undefined
   }
@@ -76,6 +77,7 @@ async function readManifest(
       text: decoder.decode(bytes),
     }
   } catch {
+    signal?.throwIfAborted()
     diagnostics.push(diagnostic(source, 'invalid-manifest', `${name.split('/').at(-1) ?? 'Manifest'} is not valid UTF-8 text.`))
     return undefined
   }
@@ -125,6 +127,12 @@ function taskPurpose(name: string): TaskPurpose {
   return 'other'
 }
 
+function automaticTask(name: string, command = ''): boolean {
+  const tokens = name.toLowerCase().split(/[:._-]+/u)
+  return !tokens.some(token => ['fix', 'write', 'update', 'watch', 'dev', 'serve', 'start'].includes(token))
+    && !/(?:^|\s)(?:--(?:fix|write|update|watch)(?:[=\s]|$)|-u(?:\s|$))/u.test(command)
+}
+
 function parsePackage(manifest: ManifestContent, workspace: string, diagnostics: DiscoveryDiagnostic[]): ParsedPackage | undefined {
   let parsed: unknown
   try {
@@ -161,7 +169,7 @@ function parsePackage(manifest: ManifestContent, workspace: string, diagnostics:
 function packageTasks(pkg: ParsedPackage, inheritedManager: PackageManager | undefined): ProjectTask[] {
   const scripts = pkg.record.scripts
   if (typeof scripts !== 'object' || scripts === null || Array.isArray(scripts)) return []
-  const manager = pkg.manager ?? inheritedManager
+  const manager = pkg.record.packageManager !== undefined ? pkg.manager : inheritedManager
   return Object.entries(scripts as Record<string, unknown>).flatMap(([name, command]): ProjectTask[] => {
     if (typeof command !== 'string' || name.trim() === '') return []
     return [{
@@ -178,6 +186,7 @@ function packageTasks(pkg: ParsedPackage, inheritedManager: PackageManager | und
       purpose: taskPurpose(name),
       dependsOn: [],
       runnable: manager !== undefined,
+      automatic: automaticTask(name, command),
       ...manager === undefined ? {} : {
         invocation: { kind: 'package' as const, manager, script: name, cwd: pkg.workspace },
       },
@@ -193,19 +202,25 @@ function workspacePatternsFromPackage(record: Record<string, unknown>): string[]
   return Array.isArray(packages) ? packages.filter((value): value is string => typeof value === 'string') : []
 }
 
-function workspacePatternsFromPnpm(text: string): string[] {
+function workspacePatternsFromPnpm(text: string, diagnostics: DiscoveryDiagnostic[]): string[] {
   const patterns: string[] = []
   let inPackages = false
   for (const line of text.replaceAll('\r\n', '\n').split('\n')) {
-    if (/^packages\s*:\s*$/u.test(line)) {
+    if (/^packages\s*:\s*(?:#.*)?$/u.test(line)) {
       inPackages = true
       continue
     }
+    if (/^packages\s*:/u.test(line)) diagnostics.push(diagnostic('package', 'unsupported-workspace-syntax', 'Use a block packages list in pnpm-workspace.yaml.'))
     if (!inPackages) continue
-    if (/^[^\s#]/u.test(line)) break
     const match = /^\s*-\s*(.+?)\s*$/u.exec(line)
-    if (match === null) continue
-    let value = match[1]!
+    if (match === null) {
+      if (/^[^\s#]/u.test(line)) break
+      if (line.trim() !== '' && !line.trimStart().startsWith('#')) {
+        diagnostics.push(diagnostic('package', 'unsupported-workspace-syntax', 'Expected a scalar packages list item in pnpm-workspace.yaml.'))
+      }
+      continue
+    }
+    let value = match[1]!.replace(/\s+#.*$/u, '').trim()
     if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) {
       value = value.slice(1, -1)
     }
@@ -237,6 +252,7 @@ async function workspaceDirectories(
   const visited = new Set<string>()
   const directoryCache = new Map<string, readonly string[]>()
   let directoryLimit = false
+  let depthLimit = false
 
   async function children(path: string): Promise<readonly string[]> {
     signal?.throwIfAborted()
@@ -248,10 +264,11 @@ async function workspaceDirectories(
     }
     visited.add(path)
     try {
-      const names = await reader.listDirectories(path, signal)
+      const names = [...await reader.listDirectories(path, signal)].filter(name => !['node_modules', '.git'].includes(name)).sort((a, b) => a.localeCompare(b, 'en'))
       directoryCache.set(path, names)
       return names
     } catch {
+      signal?.throwIfAborted()
       diagnostics.push(diagnostic('package', 'workspace-read-failed', 'Could not inspect workspace directories.'))
       directoryCache.set(path, [])
       return []
@@ -271,6 +288,7 @@ async function workspaceDirectories(
         const next = path === '.' ? name : `${path}/${name}`
         matches.add(next)
         if (next.split('/').length < MAX_WORKSPACE_DEPTH) await expand(next, segments, index)
+        else depthLimit = true
       }
       return
     }
@@ -293,6 +311,7 @@ async function workspaceDirectories(
     }
     await expand('.', segments, 0)
   }
+  if (depthLimit) diagnostics.push(diagnostic('package', 'workspace-depth-limit', 'Workspace traversal reached the depth limit.'))
   if (directoryLimit) {
     diagnostics.push(diagnostic('package', 'workspace-directory-limit', `Workspace traversal inspected at most ${MAX_WORKSPACE_DIRECTORIES} directories.`))
   }
@@ -314,12 +333,21 @@ function linkPackageDependencies(tasks: ProjectTask[], packages: readonly Parsed
   }
   for (const pkg of packages) {
     const ownTasks = tasksByWorkspace.get(pkg.workspace) ?? []
+    const reachable = new Set<string>()
+    const pending = [...pkg.dependencies]
+    while (pending.length > 0) {
+      const dependency = byName.get(pending.pop()!)
+      if (dependency === undefined || reachable.has(dependency.workspace)) continue
+      reachable.add(dependency.workspace)
+      pending.push(...dependency.dependencies)
+    }
     for (const own of ownTasks) {
+      own.workspaceDependencies = [...reachable].sort()
       const dependencies = pkg.dependencies.flatMap(name => {
         const dependency = byName.get(name)
         if (dependency === undefined) return []
         return (tasksByWorkspace.get(dependency.workspace) ?? [])
-          .filter(candidate => candidate.purpose === own.purpose)
+          .filter(candidate => candidate.purpose === own.purpose && candidate.automatic !== false)
           .map(candidate => candidate.id)
       })
       own.dependsOn = [...new Set(dependencies)].sort((left, right) => left.localeCompare(right, 'en'))
@@ -387,18 +415,42 @@ export async function discoverProjectTasks(
   reader: ManifestReader,
   signal?: AbortSignal,
 ): Promise<TaskDiscoveryResult> {
+  const declarations = new Map<string, string>()
+  const underlying = reader
+  reader = {
+    async readCandidate(name, signal) {
+      const bytes = await underlying.readCandidate(name, signal)
+      declarations.set(name, bytes === undefined ? 'absent' : createHash('sha256').update(bytes).digest('hex'))
+      return bytes
+    },
+    lockfiles: signal => underlying.lockfiles(signal),
+    listDirectories: (path, signal) => underlying.listDirectories(path, signal),
+  }
   const diagnostics: DiscoveryDiagnostic[] = []
+  for (const config of ['pnpm-lock.yaml', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'bun.lock', 'bun.lockb', '.npmrc', '.yarnrc.yml', 'tsconfig.json', 'turbo.json', 'nx.json']) {
+    signal?.throwIfAborted()
+    try {
+      const bytes = await reader.readCandidate(config, signal)
+      if (bytes !== undefined && bytes.byteLength > MAX_MANIFEST_BYTES) {
+        diagnostics.push(diagnostic('all', 'config-too-large', 'Configuration exceeds the 1 MiB freshness limit.'))
+      }
+    } catch {
+      signal?.throwIfAborted()
+      diagnostics.push(diagnostic('all', 'config-read-failed', 'Could not read project configuration.'))
+    }
+  }
   const tasks: ProjectTask[] = []
   const packages: ParsedPackage[] = []
   const rootManifest = await readManifest(reader, 'package', 'package.json', diagnostics, signal)
   const rootPackage = rootManifest === undefined ? undefined : parsePackage(rootManifest, '.', diagnostics)
 
   let rootManager = rootPackage?.manager
-  if (rootPackage !== undefined && rootManager === undefined) {
+  if (rootPackage !== undefined && rootManager === undefined && rootPackage.record.packageManager === undefined) {
     let selected: ReturnType<typeof packageManagerFromLocks>
     try {
       selected = packageManagerFromLocks(await reader.lockfiles(signal))
     } catch {
+      signal?.throwIfAborted()
       diagnostics.push(diagnostic('package', 'lockfile-read-failed', 'Could not inspect project lockfiles.'))
       selected = undefined
     }
@@ -418,7 +470,7 @@ export async function discoverProjectTasks(
     const pnpmWorkspace = await readManifest(reader, 'package', 'pnpm-workspace.yaml', diagnostics, signal)
     const patterns = [
       ...workspacePatternsFromPackage(rootPackage.record),
-      ...pnpmWorkspace === undefined ? [] : workspacePatternsFromPnpm(pnpmWorkspace.text),
+      ...pnpmWorkspace === undefined ? [] : workspacePatternsFromPnpm(pnpmWorkspace.text, diagnostics),
     ]
     const directories = await workspaceDirectories(reader, [...new Set(patterns)], diagnostics, signal)
     for (const workspace of directories) {
@@ -431,6 +483,8 @@ export async function discoverProjectTasks(
     }
   }
 
+  const names = packages.flatMap(pkg => pkg.name === undefined ? [] : [pkg.name])
+  if (new Set(names).size !== names.length) diagnostics.push(diagnostic('package', 'duplicate-package-name', 'Local package names must be unique.'))
   linkPackageDependencies(tasks, packages)
   const makeManifest = await readFirst(reader, 'make', ['GNUmakefile', 'makefile', 'Makefile'], diagnostics, signal)
   if (makeManifest !== undefined) tasks.push(...makeTasks(makeManifest))
@@ -443,5 +497,11 @@ export async function discoverProjectTasks(
     tasks.length = MAX_TASKS
     diagnostics.push(diagnostic('all', 'task-limit', `Task discovery returned the first ${MAX_TASKS} declarations.`))
   }
+  const contextDigest = createHash('sha256').update(JSON.stringify([...declarations].sort())).digest('hex')
+  for (const task of tasks) {
+    task.automatic ??= automaticTask(task.name)
+    task.manifestDigest = createHash('sha256').update(JSON.stringify([contextDigest, task.manifestDigest, task.invocation])).digest('hex')
+  }
+  signal?.throwIfAborted()
   return { tasks, diagnostics }
 }

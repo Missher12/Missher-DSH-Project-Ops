@@ -29,4 +29,6 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - run: pnpm run smoke:profile
       - run: pnpm run smoke:package
+      - run: pnpm run smoke:clean

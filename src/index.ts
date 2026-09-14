@@ -1,24 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { FileSystem } from '@deepseek-ai/dsh-fs'
-import { JobId, type JobSnapshot } from '@deepseek-ai/dsh-jobs'
-import { CallId, type ContentBlock, type ToolSchema } from '@deepseek-ai/dsh-llm'
-import { defineTool, type JsonValue, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
-import { rankCapabilities, type CapabilityCandidate } from './capability-ranking.ts'
-import type { ProjectTask } from './contracts.ts'
-import { discoverProjectTasks, MAX_MANIFEST_BYTES, type ManifestReader } from './task-discovery.ts'
-import {
-  commandFor,
-  createJobReceipt,
-  createReceipt,
-  receiptContent,
-  type ExecutionReceipt,
-  type ExecutorTool,
-  type ReceiptResult,
-} from './task-execution.ts'
-import { createTaskPlan, type PlanGoal } from './task-planning.ts'
-import { evaluateVerificationGate } from './verification-gate.ts'
-
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { ProjectTask, ExecutionReceipt } from './contracts.ts'
+import { receiptContent } from './task-execution.ts'
+import type { PlanGoal } from './task-planning.ts'
+import { ProjectOpsService } from './project-ops.ts'
+import { createHarnessHost, type HarnessConfig } from './harness-host.ts'
+export type { HarnessConfig } from './harness-host.ts'
+import { PROJECT_OPS_AGENT_GUIDANCE, PROJECT_OPS_AGENT_GUIDANCE_SECTION } from './agent-guidance.ts'
+type Service = ProjectOpsService<ToolRunContext>
 /** Stable Cordis plugin name. */
 export const name = 'missher-project-ops'
 
@@ -31,15 +22,6 @@ const TASK_RUN = 'missher_project_ops_task_run'
 const TASK_COLLECT = 'missher_project_ops_task_collect'
 const VERIFICATION_GATE = 'missher_project_ops_verification_gate'
 const CAPABILITY_SEARCH = 'missher_project_ops_capability_search'
-const LOCKFILES = [
-  'pnpm-lock.yaml',
-  'package-lock.json',
-  'npm-shrinkwrap.json',
-  'yarn.lock',
-  'bun.lock',
-  'bun.lockb',
-] as const
-
 interface PublicTask {
   id: string
   name: string
@@ -52,82 +34,12 @@ interface PublicTask {
   purpose: ProjectTask['purpose']
   dependsOn: string[]
   runnable: boolean
+  automatic?: boolean
 }
 
 interface TaskRunValue {
   nestedContent: JsonValue[]
   receipt: ExecutionReceipt
-}
-
-class HarnessManifestReader implements ManifestReader {
-  constructor(
-    private readonly fs: FileSystem,
-    private readonly cwd: string,
-  ) {}
-
-  async readCandidate(name: string, signal?: AbortSignal): Promise<Uint8Array | undefined> {
-    const pathInfo = await this.fs.lstat(name, { cwd: this.cwd }, signal)
-    if (pathInfo === undefined || pathInfo.type !== 'file') return undefined
-    if (pathInfo.size !== undefined && pathInfo.size > MAX_MANIFEST_BYTES) {
-      return new Uint8Array(MAX_MANIFEST_BYTES + 1)
-    }
-    const target = await this.fs.resolve(name, {
-      cwd: this.cwd,
-      ...signal === undefined ? {} : { signal },
-    })
-    const root = await this.fs.resolve('.', { cwd: this.cwd, ...signal === undefined ? {} : { signal } })
-    if (!this.fs.contains(root, target)) return undefined
-    return this.fs.readBytes(target, signal, MAX_MANIFEST_BYTES)
-  }
-
-  async lockfiles(signal?: AbortSignal): Promise<readonly string[]> {
-    const found: string[] = []
-    for (const name of LOCKFILES) {
-      const info = await this.fs.lstat(name, { cwd: this.cwd }, signal)
-      if (info?.type === 'file') found.push(name)
-    }
-    return found
-  }
-
-  async listDirectories(path: string, signal?: AbortSignal): Promise<readonly string[]> {
-    const pathInfo = await this.fs.lstat(path, { cwd: this.cwd }, signal)
-    if (pathInfo?.type !== 'directory') return []
-    const root = await this.fs.resolve('.', { cwd: this.cwd, ...signal === undefined ? {} : { signal } })
-    const directory = await this.fs.resolve(path, { cwd: this.cwd, ...signal === undefined ? {} : { signal } })
-    if (!this.fs.contains(root, directory)) return []
-    const entries = await this.fs.listDir(directory, signal)
-    const names: string[] = []
-    for (const entry of entries) {
-      if (entry.type !== 'directory' || !this.fs.contains(root, entry.target)) continue
-      const candidate = path === '.' ? entry.name : `${path}/${entry.name}`
-      const info = await this.fs.lstat(candidate, { cwd: this.cwd }, signal)
-      if (info?.type === 'directory') names.push(entry.name)
-    }
-    return names
-  }
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
-
-function sessionCwd(exec: ToolRunContext): string {
-  const cwd = exec.agent?.session.header.cwd
-  if (cwd === undefined || cwd.trim() === '') throw new Error('Project Ops requires an owning Agent Session cwd')
-  return cwd
-}
-
-function reader(ctx: Context, exec: ToolRunContext): HarnessManifestReader {
-  return new HarnessManifestReader(ctx.fs, sessionCwd(exec))
-}
-
-async function taskWorkdir(ctx: Context, cwd: string, task: ProjectTask, signal?: AbortSignal): Promise<string> {
-  const root = await ctx.fs.resolve('.', { cwd, ...signal === undefined ? {} : { signal } })
-  const directory = await ctx.fs.resolve(task.workspace, { cwd, ...signal === undefined ? {} : { signal } })
-  if (!ctx.fs.contains(root, directory)) throw new Error('project task workspace escaped the Session cwd')
-  return ctx.fs.processPath(directory)
 }
 
 function publicTask(task: ProjectTask): PublicTask {
@@ -143,6 +55,7 @@ function publicTask(task: ProjectTask): PublicTask {
     purpose,
     dependsOn,
     runnable,
+    automatic,
   } = task
   return {
     id,
@@ -156,6 +69,7 @@ function publicTask(task: ProjectTask): PublicTask {
     purpose,
     dependsOn,
     runnable,
+    ...automatic === undefined ? {} : { automatic },
   }
 }
 
@@ -174,6 +88,7 @@ const TASK_SCHEMA = {
     purpose: { type: 'string', enum: ['test', 'lint', 'typecheck', 'build', 'format', 'other'], required: true },
     dependsOn: { type: 'array', items: { type: 'string' }, required: true },
     runnable: { type: 'boolean', required: true },
+    automatic: { type: 'boolean' },
   },
 } as const
 
@@ -191,14 +106,17 @@ const RECEIPT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    receiptVersion: { type: 'integer', const: 2, required: true },
+    receiptVersion: { type: 'integer', enum: [2, 3], required: true },
+    executionId: { type: 'string' },
+    sourceDigest: { type: 'string' },
+    freshness: { type: 'string', enum: ['stable', 'changed', 'unavailable'] },
     taskId: { type: 'string', required: true },
     source: { type: 'string', enum: ['package', 'make', 'just'], required: true },
     workspace: { type: 'string', required: true },
     purpose: { type: 'string', enum: ['test', 'lint', 'typecheck', 'build', 'format', 'other'], required: true },
     manifestDigest: { type: 'string', required: true },
     executionMode: { type: 'string', enum: ['foreground', 'background'], required: true },
-    executorTool: { type: 'string', enum: ['bash', 'pwsh'] },
+    executorTool: { type: 'string' },
     nestedCallId: { type: 'string', required: true },
     jobId: { type: 'string' },
     startedAt: { type: 'string', required: true },
@@ -228,7 +146,7 @@ function renderJson(value: JsonValue): ContentBlock[] {
   return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
 }
 
-function taskListTool(ctx: Context): ToolDefinition {
+function taskListTool(service: Service): ToolDefinition {
   return defineTool({
     name: TASK_LIST,
     description: 'List bounded root and declared-workspace tasks in the current Agent Session project.',
@@ -245,13 +163,13 @@ function taskListTool(ctx: Context): ToolDefinition {
       render: (_args, value) => renderJson(value),
     },
     async execute(_args, exec) {
-      const discovered = await discoverProjectTasks(reader(ctx, exec), exec.signal)
+      const discovered = await service.list(exec)
       return { tasks: discovered.tasks.map(publicTask), diagnostics: discovered.diagnostics }
     },
   })
 }
 
-function taskPlanTool(ctx: Context): ToolDefinition {
+function taskPlanTool(service: Service): ToolDefinition {
   return defineTool({
     name: TASK_PLAN,
     description: 'Plan safe affected verification/build tasks from explicit workspace-relative changed files.',
@@ -273,6 +191,8 @@ function taskPlanTool(ctx: Context): ToolDefinition {
           goal: { type: 'string', enum: ['verify', 'build', 'all'], required: true },
           changedFilesDigest: { type: 'string', required: true },
           planDigest: { type: 'string', required: true },
+          sourceDigest: { type: 'string' },
+          snapshotStatus: { type: 'string', enum: ['available', 'unavailable'], required: true },
           affectedWorkspaces: { type: 'array', items: { type: 'string' }, required: true },
           tasks: { type: 'array', items: TASK_SCHEMA, required: true },
           diagnostics: { type: 'array', items: DIAGNOSTIC_SCHEMA, required: true },
@@ -281,82 +201,23 @@ function taskPlanTool(ctx: Context): ToolDefinition {
       render: (_args, value) => renderJson(value),
     },
     async execute(args, exec) {
-      const discovered = await discoverProjectTasks(reader(ctx, exec), exec.signal)
-      const plan = createTaskPlan(discovered.tasks, args.changedFiles, args.goal as PlanGoal)
+      const plan = await service.plan(exec, { changedFiles: args.changedFiles, goal: args.goal as PlanGoal })
       return {
         planVersion: plan.planVersion,
         goal: plan.goal,
         changedFilesDigest: plan.changedFilesDigest,
         planDigest: plan.planDigest,
+        ...plan.sourceDigest === undefined ? {} : { sourceDigest: plan.sourceDigest },
+        snapshotStatus: plan.snapshotStatus,
         affectedWorkspaces: plan.affectedWorkspaces,
         tasks: plan.tasks.map(publicTask),
-        diagnostics: [...discovered.diagnostics, ...plan.diagnostics],
+        diagnostics: plan.diagnostics,
       }
     },
   })
 }
 
-function executorFor(ctx: Context, owner: Agent | undefined): ExecutorTool | undefined {
-  const selected: ExecutorTool = process.platform === 'win32' ? 'pwsh' : 'bash'
-  return ctx.tools.get(selected, owner) === undefined ? undefined : selected
-}
-
-function schemaFor(ctx: Context, owner: Agent | undefined, name: string): ToolSchema | undefined {
-  return ctx.tools.schemas(owner).find(schema => schema.name === name)
-}
-
-function parameterProperties(schema: ToolSchema | undefined): Record<string, unknown> {
-  return record(schema?.parameters.properties) ?? {}
-}
-
-function supportsBackground(ctx: Context, owner: Agent | undefined, executor: ExecutorTool): boolean {
-  return Object.hasOwn(parameterProperties(schemaFor(ctx, owner, executor)), 'run_in_background')
-}
-
-function shellArguments(
-  ctx: Context,
-  owner: Agent | undefined,
-  executor: ExecutorTool,
-  command: string,
-  workdir: string,
-  background: boolean,
-): Record<string, JsonValue> {
-  const properties = parameterProperties(schemaFor(ctx, owner, executor))
-  return {
-    command,
-    ...Object.hasOwn(properties, 'description') ? { description: 'Run declared project task' } : {},
-    ...Object.hasOwn(properties, 'workdir') ? { workdir } : {},
-    ...background ? { run_in_background: true } : {},
-  }
-}
-
-function backgroundJobId(result: ReceiptResult): string | undefined {
-  if (result.isError) return undefined
-  const value = record(result.value)
-  return value?.kind === 'background' && typeof value.jobId === 'string' ? value.jobId : undefined
-}
-
-function jobContent(output: string, fallback: readonly ContentBlock[]): ContentBlock[] {
-  return output === '' ? [...fallback] : [{ type: 'text', text: output }]
-}
-
-async function rediscoveredTask(
-  ctx: Context,
-  exec: ToolRunContext,
-  taskId: string,
-  manifestDigest: string,
-): Promise<ProjectTask> {
-  if (taskId.trim() === '' || taskId.length > 256) throw new Error('taskId must contain 1 through 256 characters')
-  if (!/^[a-f0-9]{64}$/u.test(manifestDigest)) throw new Error('manifestDigest must be a lowercase SHA-256 digest')
-  const discovered = await discoverProjectTasks(reader(ctx, exec), exec.signal)
-  const task = discovered.tasks.find(candidate => candidate.id === taskId)
-  if (task === undefined) throw new Error(`project task ${JSON.stringify(taskId)} is not declared`)
-  if (task.manifestDigest !== manifestDigest) throw new Error(`project task ${JSON.stringify(taskId)} manifest changed; list tasks again`)
-  if (!task.runnable || task.invocation === undefined) throw new Error(`project task ${JSON.stringify(taskId)} is not runnable`)
-  return task
-}
-
-function taskRunTool(ctx: Context): ToolDefinition {
+function taskRunTool(service: Service): ToolDefinition {
   return defineTool({
     name: TASK_RUN,
     description: 'Run one fresh declared task in foreground, background, or background-first auto mode.',
@@ -385,92 +246,13 @@ function taskRunTool(ctx: Context): ToolDefinition {
       },
     },
     async execute(args, exec) {
-      const mode = args.mode ?? 'foreground'
-      const waitMs = args.waitMs ?? 3_000
-      if (!Number.isInteger(waitMs) || waitMs < 1 || waitMs > 10_000) throw new Error('waitMs must be an integer from 1 through 10000')
-      const cwd = sessionCwd(exec)
-      const task = await rediscoveredTask(ctx, exec, args.taskId, args.manifestDigest)
-      const executorTool = executorFor(ctx, exec.agent)
-      const nestedCallId = CallId(`${exec.callId}:project-ops:1`)
-      const startedAtMs = Date.now()
-      const startedAt = new Date(startedAtMs).toISOString()
-      if (executorTool === undefined) {
-        const receipt = createReceipt({ task, nestedCallId, startedAt, durationMs: Date.now() - startedAtMs })
-        return {
-          nestedContent: [{ type: 'text', text: 'No platform shell tool is visible to this Agent.' }] as unknown as JsonValue[],
-          receipt,
-        }
-      }
-
-      const backgroundAvailable = supportsBackground(ctx, exec.agent, executorTool)
-      if (mode === 'background' && !backgroundAvailable) throw new Error('background execution is unavailable for the visible shell tool')
-      const background = mode !== 'foreground' && backgroundAvailable
-      const command = commandFor(task, executorTool)
-      const workdir = await taskWorkdir(ctx, cwd, task, exec.signal)
-      const result = await ctx.tools.execute({
-        callId: nestedCallId,
-        rootCallId: exec.rootCallId,
-        name: executorTool,
-        arguments: shellArguments(ctx, exec.agent, executorTool, command, workdir, background),
-        ...exec.agent === undefined ? {} : { agent: exec.agent },
-        parent: exec.token,
-        signal: exec.signal,
-      }) as ReceiptResult
-
-      if (!background) {
-        const receipt = createReceipt({
-          task,
-          executorTool,
-          nestedCallId,
-          startedAt,
-          durationMs: Date.now() - startedAtMs,
-          result,
-        })
-        return { nestedContent: [...result.content] as unknown as JsonValue[], receipt }
-      }
-
-      const jobId = backgroundJobId(result)
-      if (jobId === undefined) {
-        const receipt = createReceipt({
-          task,
-          executorTool,
-          nestedCallId,
-          startedAt,
-          durationMs: Date.now() - startedAtMs,
-          executionMode: 'background',
-          result,
-        })
-        return { nestedContent: [...result.content] as unknown as JsonValue[], receipt }
-      }
-      let snapshot: JobSnapshot
-      let output = ''
-      if (mode === 'auto') {
-        snapshot = await ctx.jobs.wait(JobId(jobId), waitMs, exec.agent, exec.signal)
-        const read = ctx.jobs.read(JobId(jobId), exec.agent)
-        snapshot = read.snapshot
-        output = read.text
-      } else {
-        snapshot = ctx.jobs.get(JobId(jobId), exec.agent)
-      }
-      const receipt = createJobReceipt({
-        task,
-        executorTool,
-        nestedCallId,
-        jobId,
-        startedAt,
-        durationMs: Date.now() - startedAtMs,
-        snapshot,
-        output,
-      })
-      return {
-        nestedContent: jobContent(output, result.content) as unknown as JsonValue[],
-        receipt,
-      }
+      const result = await service.run(exec, args)
+      return { receipt: result.receipt, nestedContent: result.nestedContent as JsonValue[] }
     },
   })
 }
 
-function taskCollectTool(ctx: Context): ToolDefinition {
+function taskCollectTool(service: Service): ToolDefinition {
   return defineTool({
     name: TASK_COLLECT,
     description: 'Poll or wait for one Project Ops background task and return a fresh owner-fenced receipt.',
@@ -497,42 +279,13 @@ function taskCollectTool(ctx: Context): ToolDefinition {
       },
     },
     async execute(args, exec) {
-      if (args.jobId.trim() === '' || args.jobId.length > 128) throw new Error('jobId must contain 1 through 128 characters')
-      if (args.nestedCallId.trim() === '' || args.nestedCallId.length > 512) throw new Error('nestedCallId must contain 1 through 512 characters')
-      const startedAtMs = Date.parse(args.startedAt)
-      if (!Number.isFinite(startedAtMs)) throw new Error('startedAt must be an ISO timestamp')
-      if (args.waitMs !== undefined && (!Number.isInteger(args.waitMs) || args.waitMs < 1 || args.waitMs > 10_000)) {
-        throw new Error('waitMs must be an integer from 1 through 10000')
-      }
-      const task = await rediscoveredTask(ctx, exec, args.taskId, args.manifestDigest)
-      const executorTool = executorFor(ctx, exec.agent)
-      if (executorTool === undefined) throw new Error('No platform shell tool is visible to this Agent.')
-      const id = JobId(args.jobId)
-      if (args.waitMs !== undefined) await ctx.jobs.wait(id, args.waitMs, exec.agent, exec.signal)
-      const snapshot = ctx.jobs.get(id, exec.agent)
-      if (snapshot.kind !== executorTool || snapshot.label !== commandFor(task, executorTool)) {
-        throw new Error('background job does not belong to the declared project task')
-      }
-      const read = ctx.jobs.read(id, exec.agent)
-      const receipt = createJobReceipt({
-        task,
-        executorTool,
-        nestedCallId: args.nestedCallId,
-        jobId: args.jobId,
-        startedAt: args.startedAt,
-        durationMs: Date.now() - startedAtMs,
-        snapshot: read.snapshot,
-        output: read.text,
-      })
-      return {
-        nestedContent: [{ type: 'text', text: read.text === '' ? '(no new job output)' : read.text }] as unknown as JsonValue[],
-        receipt,
-      }
+      const result = await service.collect(exec, args)
+      return { receipt: result.receipt, nestedContent: result.nestedContent as JsonValue[] }
     },
   })
 }
 
-function verificationGateTool(ctx: Context): ToolDefinition {
+function verificationGateTool(service: Service): ToolDefinition {
   return defineTool({
     name: VERIFICATION_GATE,
     description: 'Recompute an affected-task plan and decide whether supplied Project Ops receipts are fresh and complete.',
@@ -544,14 +297,13 @@ function verificationGateTool(ctx: Context): ToolDefinition {
     },
     output: { schema: GATE_SCHEMA, render: (_args, value) => renderJson(value) },
     async execute(args, exec) {
-      const discovered = await discoverProjectTasks(reader(ctx, exec), exec.signal)
-      const plan = createTaskPlan(discovered.tasks, args.changedFiles, args.goal as PlanGoal)
-      return evaluateVerificationGate(plan, discovered.tasks, args.receipts as ExecutionReceipt[], args.planDigest)
+      return service.gate(exec, { changedFiles: args.changedFiles, goal: args.goal as PlanGoal,
+        receipts: args.receipts as ExecutionReceipt[], planDigest: args.planDigest })
     },
   })
 }
 
-function capabilitySearchTool(ctx: Context): ToolDefinition {
+function capabilitySearchTool(service: Service): ToolDefinition {
   return defineTool({
     name: CAPABILITY_SEARCH,
     description: 'Search tools visible to this Agent and tasks declared by its current project workspaces.',
@@ -585,32 +337,39 @@ function capabilitySearchTool(ctx: Context): ToolDefinition {
       render: (_args, value) => renderJson(value),
     },
     async execute(args, exec) {
-      const discovered = await discoverProjectTasks(reader(ctx, exec), exec.signal)
-      const candidates: CapabilityCandidate[] = [
-        ...ctx.tools.schemas(exec.agent).map(tool => ({
-          source: 'tool' as const,
-          id: `tool:${tool.name}`,
-          name: tool.name,
-          description: tool.description,
-        })),
-        ...discovered.tasks.map(task => ({
-          source: 'project-task' as const,
-          id: task.id,
-          name: task.name,
-          description: task.description,
-        })),
-      ]
-      return { matches: rankCapabilities(args.query, candidates, args.limit ?? 5) }
+      return service.search(exec, args.query, args.limit ?? 5)
     },
   })
 }
 
 /** Register the Project Ops model tools. */
-export function apply(ctx: Context): void {
-  ctx.tools.register(taskListTool(ctx))
-  ctx.tools.register(taskPlanTool(ctx))
-  ctx.tools.register(taskRunTool(ctx))
-  ctx.tools.register(taskCollectTool(ctx))
-  ctx.tools.register(verificationGateTool(ctx))
-  ctx.tools.register(capabilitySearchTool(ctx))
+export function apply(ctx: Context, config: HarnessConfig = {}): void {
+  const service = new ProjectOpsService(createHarnessHost(ctx, config))
+  ctx.effect(() => () => service.dispose())
+  ctx.provide('projectOps', service)
+  const systemPrompt = ctx.get('systemPrompt') as { section?: (section: {
+    name: string
+    order: number
+    text: string
+  }) => unknown } | undefined
+  if (systemPrompt?.section !== undefined) {
+    systemPrompt.section({
+      name: PROJECT_OPS_AGENT_GUIDANCE_SECTION,
+      order: 145,
+      text: PROJECT_OPS_AGENT_GUIDANCE,
+    })
+  }
+  ctx.tools.register(taskListTool(service))
+  ctx.tools.register(taskPlanTool(service))
+  ctx.tools.register(taskRunTool(service))
+  ctx.tools.register(taskCollectTool(service))
+  ctx.tools.register(verificationGateTool(service))
+  ctx.tools.register(capabilitySearchTool(service))
+  ctx.tools.register(defineTool({
+    name: 'missher_project_ops_doctor',
+    description: 'Read-only Project Ops host capability and source snapshot readiness check. Does not install dependencies.',
+    parameters: {},
+    output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => renderJson(value) },
+    execute: (_args, exec) => service.doctor(exec),
+  }))
 }

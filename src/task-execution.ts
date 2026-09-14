@@ -1,6 +1,7 @@
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ProjectTask } from './contracts.ts'
+import type { ExecutionReceipt, ProjectTask } from './contracts.ts'
+export type { ExecutionReceipt } from './contracts.ts'
 
 export type ExecutorTool = 'bash' | 'pwsh'
 export type ExecutionMode = 'foreground' | 'background'
@@ -10,24 +11,6 @@ export type ExecutionOutcome = 'running' | 'succeeded' | 'failed' | 'blocked' | 
 export type ReceiptResult =
   | { isError: false; content: readonly ContentBlock[]; value: unknown }
   | { isError: true; content: readonly ContentBlock[]; error: { message: string; info?: { name: string; code: string } } }
-
-/** Durable, output-free summary of one Project Ops task dispatch. */
-export interface ExecutionReceipt {
-  receiptVersion: 2
-  taskId: string
-  source: ProjectTask['source']
-  workspace: string
-  purpose: ProjectTask['purpose']
-  manifestDigest: string
-  executionMode: ExecutionMode
-  executorTool?: ExecutorTool
-  nestedCallId: string
-  jobId?: string
-  startedAt: string
-  durationMs: number
-  outcome: ExecutionOutcome
-  exitCode?: number
-}
 
 export interface ReceiptInput {
   task: ProjectTask
@@ -80,10 +63,6 @@ function foregroundExitCode(result: ReceiptResult | undefined): number | undefin
   if (result === undefined || result.isError) return undefined
   const value = record(result.value)
   if (typeof value?.exitCode === 'number' && Number.isInteger(value.exitCode)) return value.exitCode
-  if (typeof result.value === 'string') {
-    const match = /\[exit code: (-?\d+)\]/u.exec(result.value)
-    if (match !== null) return Number(match[1])
-  }
   return undefined
 }
 
@@ -97,10 +76,11 @@ function foregroundOutcome(input: ReceiptInput): ExecutionOutcome {
     return 'failed'
   }
   const value = record(result.value)
-  if (value?.aborted === true) return 'aborted'
+  if (value?.aborted === true || typeof value?.signal === 'string') return 'aborted'
+  if (value?.timedOut === true || record(value?.sandbox)?.runnerFailed === true) return 'failed'
   if (record(value?.sandbox)?.denied === true) return 'blocked'
   const code = foregroundExitCode(result)
-  return code !== undefined && code !== 0 ? 'failed' : 'succeeded'
+  return code === undefined ? 'unavailable' : code !== 0 ? 'failed' : 'succeeded'
 }
 
 function jobExitCode(snapshot: JobSnapshot): number | undefined {
@@ -112,9 +92,10 @@ function jobOutcome(snapshot: JobSnapshot, output: string | undefined): Executio
   if (snapshot.status === 'running' || snapshot.status === 'stopping') return 'running'
   if (snapshot.status === 'killed') return 'aborted'
   if (snapshot.status === 'failed') return 'failed'
+  if (/\[sandbox: the sandbox runner itself failed/u.test(output ?? '')) return 'failed'
   if (/\[sandbox: file access denied under [^\]]+\]/u.test(output ?? '')) return 'blocked'
   const code = jobExitCode(snapshot)
-  return code !== undefined && code !== 0 ? 'failed' : 'succeeded'
+  return code === undefined ? 'unavailable' : code !== 0 ? 'failed' : 'succeeded'
 }
 
 function receiptBase(task: ProjectTask, startedAt: string, durationMs: number) {

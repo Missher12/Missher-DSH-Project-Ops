@@ -21,9 +21,34 @@ export interface ProjectTask {
   workspace: string
   packageName?: string
   purpose: TaskPurpose
+  /** Transitive package impact, independent of same-purpose execution edges. */
+  workspaceDependencies?: string[]
   dependsOn: string[]
   runnable: boolean
+  /** False for recognized mutating or persistent tasks; explicit execution remains available. */
+  automatic?: boolean
   invocation?: TaskInvocation
+}
+
+/** Host-neutral execution evidence. Version 2 is accepted only as legacy, unbound evidence. */
+export interface ExecutionReceipt {
+  receiptVersion: 2 | 3
+  taskId: string
+  source: TaskSource
+  workspace: string
+  purpose: TaskPurpose
+  manifestDigest: string
+  executionMode: 'foreground' | 'background'
+  executorTool?: string
+  nestedCallId: string
+  jobId?: string
+  startedAt: string
+  durationMs: number
+  outcome: 'running' | 'succeeded' | 'failed' | 'blocked' | 'aborted' | 'unavailable'
+  exitCode?: number
+  executionId?: string
+  sourceDigest?: string
+  freshness?: 'stable' | 'changed' | 'unavailable'
 }
 
 /** Bounded task-source diagnostic that never includes manifest contents. */
