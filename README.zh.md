@@ -1,5 +1,37 @@
 # dsh-project-ops
 
+[← 桌面端与安装包](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [全部插件](https://github.com/Missher12/Missher-DeepseekHarness-Desktop/blob/main/plugins/README.zh.md) · [通用安装指南](https://github.com/Missher12/Missher-DeepseekHarness-Desktop/blob/main/docs/cookbook/install-cordis-plugins.zh.md)
+
+## 新手上手：项目任务执行
+
+让 Agent 发现项目声明的任务、选择受改动影响的检查、运行后台任务并收集验证回执。
+
+| 你需要知道的事 | 说明 |
+| --- | --- |
+| 插件包名 | `dsh-project-ops` |
+| 当前源码版本 | `0.3.1` |
+| 装好后在哪里使用 | Agent 工具；INSTALL.md 与 docs/AGENT_USAGE.md |
+| 下载 / 源码 | [下载 0.3.1 安装包](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.3.1) |
+
+### 安装、启用与第一次使用
+
+1. 先从[桌面端主页](https://github.com/Missher12/Missher-DeepseekHarness-Desktop)下载适合电脑的应用，完成模型配置。这个仓库是可选插件，不是独立桌面应用。
+2. 阅读[通用安装指南](https://github.com/Missher12/Missher-DeepseekHarness-Desktop/blob/main/docs/cookbook/install-cordis-plugins.zh.md)及本页原有安装说明，核对宿主与插件版本。桌面版使用“插件 → 添加插件”；Web/CLI 使用自己的目标配置组，不混用两种安装位置。
+3. 安装后按宿主提示启用并重新加载，进入上表列出的入口。更新已有插件前保留配置和数据，不同时启用旧包名与新包名。
+4. 先让 Agent 列出项目任务并生成检查计划，再运行明确选定的任务；区分执行输出和可核验的回执。
+
+### 使用前了解这些边界
+
+它复用宿主的命令权限、沙箱和 Jobs，不会绕过审批。当前公开兼容基线是 Harness 0.1.5-rc.2 / Cordis 4.0.2。
+
+如果页面或功能没出现，先检查当前应用版本、插件是否启用以及加载错误。反馈时附版本、复现步骤和已脱敏错误；不要上传 API Key、真实会话、账号 Cookie 或学习数据库。Git 中的代码更新不会自动替换电脑上已安装的插件。
+
+### 继续阅读
+
+下文保留本插件的详细行为、配置、开发和验证说明。跨平台是否实际通过，以对应版本的验证记录为准；桌面安装包能启动，不代表全部插件和外部服务都已验收。
+
+---
+
 [English](README.md) | 中文
 
 `dsh-project-ops` 是可独立安装的 Cordis 项目执行插件，保留 DeepSeek Harness Bundle 兼容入口。它让 Agent 在有界范围内理解项目声明的任务，按变更文件规划受影响检查，把长任务交给 Harness 原生 Jobs，并用不含输出的回执判断验证是否完整通过。
@@ -15,7 +47,7 @@
 已有目标 Harness CLI 时，复制这一条命令安装固定版本：
 
 ```sh
-dsh plugin --profile web add https://github.com/Missher12/dsh-project-ops/releases/download/v0.3.1/dsh-project-ops-0.3.1.tgz
+dsh plugin --profile web add https://github.com/Missher12/Missher-DSH-Project-Ops/releases/download/v0.3.1/dsh-project-ops-0.3.1.tgz
 ```
 
 Desktop 内置 CLI 的选择、校验、首次使用与卸载见 [INSTALL.md](INSTALL.md)。DSH Market 使用完整名称 `dsh-project-ops` 搜索，目录收录属于单独的发布步骤。
