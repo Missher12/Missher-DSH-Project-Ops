@@ -1,0 +1,361 @@
+/*
+ * Project Ops session-header panel.
+ *
+ * Every token below is defined by the official theme of the target Host
+ * (`@deepseek-ai/dsh-client-ui-theme`, 0.2.1-alpha.2); none is a token that
+ * only exists in unpublished sources. Light and dark themes are inherited
+ * automatically, so this file declares no color of its own.
+ *
+ * Class names are namespaced (`po-`) because the sheet is injected globally:
+ * the closure-factory channel delivers CSS as text, not through a CSS-Modules
+ * class map.
+ */
+
+/* Header action seat: in flow, never a zero-size overlay. */
+.po-root {
+  display: inline-flex;
+  min-width: 0;
+}
+
+/*
+ * Trigger: the native session-header action shape — transparent, borderless,
+ * 28px tall, tertiary label that lifts to secondary on hover/focus. No
+ * `background: Canvas` and no default button bevel.
+ */
+.po-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: var(--dsw-font-xxs-12-line-height);
+  cursor: pointer;
+}
+
+.po-trigger:hover,
+.po-trigger:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.po-trigger[aria-expanded='true'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-trigger-icon {
+  flex: none;
+}
+
+.po-trigger-label {
+  white-space: nowrap;
+}
+
+.po-trigger-chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.po-trigger-chevron-open {
+  transform: rotate(180deg);
+}
+
+/*
+ * Panel: portaled to the document body and fixed in the viewport, with
+ * coordinates supplied inline by the shared anchored-position hook. The
+ * z-index sits above the right sidebar (at most 40) and below modal overlays
+ * (1000), matching the official header popovers.
+ */
+.po-menu {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 420px;
+  max-width: min(440px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 140px));
+  padding: 3px;
+  overflow: hidden auto;
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: var(--dsw-font-xxs-12-line-height);
+  box-shadow: var(--dsw-elevation-prominent);
+  /* Soften the elevation stroke the way the official menus do, and keep the
+     shell's own scrollbar variables on the panel surface. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.po-menu:focus {
+  outline: none;
+}
+
+/* Compact title line with the two panel actions on the trailing edge. */
+.po-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 3px 4px 8px;
+}
+
+.po-header-title {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsw-font-xxs-strong-12-font-size);
+  font-weight: var(--dsw-font-xxs-strong-12-font-weight);
+  line-height: var(--dsw-font-xxs-strong-12-line-height);
+}
+
+.po-header-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.po-icon-button:hover,
+.po-icon-button:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.po-icon-button:active {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.po-icon-button:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.po-icon-button:disabled:hover {
+  background: transparent;
+}
+
+/* The refresh affordance while a read is in flight. */
+.po-spin {
+  animation: po-spin 900ms linear infinite;
+}
+
+@keyframes po-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* One short line carrying the read-only meaning of the whole panel. */
+.po-hint {
+  flex: none;
+  margin: 0 8px 5px;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+}
+
+/* Loading / empty / error / truncated states share one geometry. */
+.po-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 17px;
+}
+
+.po-notice-error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.po-notice-action {
+  flex: none;
+}
+
+.po-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.po-skeleton-line {
+  height: 10px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-skeleton);
+}
+
+.po-skeleton-line-short {
+  width: 45%;
+}
+
+.po-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Task card: the hover wash rides the whole row so the trailing actions stay
+ * inside it, and the inner content stays transparent to avoid stacked washes.
+ */
+.po-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 5px 5px 5px 8px;
+  border-radius: var(--dsw-radius-sm);
+}
+
+.po-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.po-row-dot {
+  flex: none;
+}
+
+.po-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Chinese task title first, delivery state beside it. */
+.po-row-primary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.po-row-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Directory id: the row's `title` carries it in full; it is only shown when no
+   readable title identified the task. */
+.po-row-id {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-row-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  max-width: 60%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-row-status-warn {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.po-row-actions {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+/*
+ * Row actions: one geometry and one state set for both buttons. Disabled means
+ * "this document was never generated": no hover, no hand cursor, dimmed label.
+ */
+.po-action {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.po-action:hover:not(:disabled),
+.po-action:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-action:disabled {
+  border-color: transparent;
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/* Narrow shells: the panel keeps the viewport margin and the rows stay legible
+   by letting the actions drop under the title instead of clipping. */
+@media (max-width: 480px) {
+  .po-menu {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+  }
+
+  .po-row {
+    flex-wrap: wrap;
+  }
+
+  .po-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

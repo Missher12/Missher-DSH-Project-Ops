@@ -1,6 +1,6 @@
 # Project Ops 安装
 
-本轮包名 `@missher/dsh-project-ops`，源码候选 0.4.0-alpha.1，针对 DSH 0.2.1-alpha.2 / Cordis 4.0.5-alpha.1。候选尚未正式发布；勿使用旧 0.3.1 下载链接冒充本轮包。由桌面唯一负责人核对最终 Host、包摘要和组合验收后统一发布、安装。
+本轮 Git 交付包名 `@missher/dsh-project-ops`、版本 **0.4.0-alpha.2**，针对 DSH 0.2.1-alpha.2 / Cordis 4.0.5-alpha.1。本机 Ubuntu 日常桌面已安装并验证新版入口；GitHub Release 和 Intel Mac 原生验收尚未完成。不要使用旧 0.3.1 下载链接代替本版，其他设备安装前应核对版本、目标 Host 与包摘要。验证及限制见 [PUBLICATION.md](PUBLICATION.md)。
 
 获准集成时通过目标桌面匹配的 `dsh plugin --profile <目标profile> add <已核验tgz>` 安装。旧无 scope 包 `dsh-project-ops` 如已存在，先记录其准确版本和 Bundle 状态，再通过正式插件管理入口移除旧 Bundle，避免同时加载同名服务；保留全部项目文档与会话数据。不得用另一宿主的 CLI 或覆盖 profile 目录代替安装。
 

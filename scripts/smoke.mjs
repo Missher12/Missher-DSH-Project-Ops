@@ -31,10 +31,15 @@ const expectedEntries = [
   'package/docs/AGENT_USAGE.md',
   'package/docs/CORDIS_INTEGRATION.md',
   'package/docs/OFFICIAL_COMPAT.md',
-  ...readdirSync(join(pluginRoot, 'lib')).filter(name => /\.(?:js|d\.ts)$/u.test(name)).map(name => `package/lib/${name}`),
+  'package/docs/TASK_DOCUMENTS.md',
+  // The client half and the shared node chunk live in lib/ subdirectories, so
+  // the whitelist walks the emitted tree instead of one flat directory level.
+  ...readdirSync(join(pluginRoot, 'lib'), { recursive: true })
+    .filter(name => /\.(?:js|d\.ts)$/u.test(name))
+    .map(name => `package/lib/${name.split('\\').join('/')}`),
   'package/package.json',
 ].sort()
-const expectedPatch = '- insert:\n    - id: missher-project-ops\n      name: dsh-project-ops\n'
+const expectedPatch = '- insert:\n    - id: missher-project-ops\n      name: "@missher/dsh-project-ops"\n'
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message)

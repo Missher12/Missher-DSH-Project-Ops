@@ -1,6 +1,6 @@
 # Project Ops 开发任务文档
 
-包名为 `@missher/dsh-project-ops`，主名称为 **Project Ops**。“项目任务”仅作为中文说明。0.4.0-alpha.1 是独立候选，正式发布和日常安装由桌面负责人统一完成。
+包名为 `@missher/dsh-project-ops`，主名称为 **Project Ops**。“项目任务”仅作为中文说明。0.4.0-alpha.2 是独立候选，正式发布和日常安装由桌面负责人统一完成。
 
 ## 使用
 

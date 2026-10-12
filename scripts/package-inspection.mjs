@@ -3,7 +3,38 @@ import { createRequire } from 'node:module'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * Platform module-table rows the Host shell answers for every client bundle.
+ * They are deliberately not npm dependencies of this package: `react-dom` is
+ * not installed here at all, and the primitives package is ESM importing CSS,
+ * which plain `require` cannot execute. A format check substitutes only what is
+ * unavailable locally and reports every substitution; the real surface of each
+ * row is verified against the installed official artifact by
+ * `scripts/check-ui-contract.mjs`, and end to end by the isolated Host run.
+ */
+const PLATFORM_STUBS = new Map([
+  ['react-dom', () => ({ createPortal: (children) => children })],
+  ['@deepseek-ai/dsh-client-ui-primitives', () => {
+    const icon = () => null
+    return {
+      StateDot: icon,
+      IconArchiveOutlineRegular: icon,
+      IconChecklistOutlineRegular: icon,
+      IconChevronDownOutlineRegular: icon,
+      IconCloseOutlineRegular: icon,
+      IconInspectOutlineRegular: icon,
+      IconRefreshOutlineRegular: icon,
+      useAnchoredPosition: () => null,
+      useDismissOnOutsidePointer: () => {},
+    }
+  }],
+])
 
 export const REQUIRED_ENTRIES = [
   'LICENSE', 'README.md', 'README.zh.md', 'README.i18n.yaml', 'package.json', 'cordis.patch.yml',
@@ -57,13 +88,37 @@ export function inspectArchive(archive, expectedSha256) {
   let client
   runInNewContext(files.get('package/lib/browser/client.js'), { window: { __ModuleLoader__: { load: value => { client = value } } } }, { timeout: 1000 })
   assert.equal(client?.id, '@missher/dsh-project-ops')
-  const loaded = client.factory(createRequire(import.meta.url))
+  // Execute the closure factory against the platform rows it will find at
+  // runtime: installed rows resolve normally, rows this repository never
+  // installs (a Host platform row) fall back to the documented stub.
+  const stubbed = []
+  const load = {
+    resolve: createRequire(import.meta.url),
+    store: createRequire(join(repositoryRoot, 'node_modules/.pnpm/node_modules/package.json')),
+    resolveRow(id) {
+      for (const candidate of [this.resolve, this.store]) {
+        try { return candidate(id) } catch { /* fall through to the next installation layout */ }
+      }
+      const stub = PLATFORM_STUBS.get(id)
+      if (stub !== undefined) {
+        stubbed.push(id)
+        return stub()
+      }
+      return undefined
+    },
+  }
+  const loaded = client.factory(id => {
+    const row = load.resolveRow(id)
+    assert.notEqual(row, undefined, `client bundle requires an unresolvable module: ${id}`)
+    return row
+  })
   assert.equal(typeof loaded.apply, 'function')
+  assert(loaded.inject.includes('sidebarRight'), 'client bundle must declare its required client services')
   assert.equal(files.get('package/cordis.patch.yml'), '- insert:\n    - id: missher-project-ops\n      name: "@missher/dsh-project-ops"\n')
   for (const [name, text] of files) {
     assert(!text.includes('sourceMappingURL='), `source map reference in ${name}`)
     assert(!text.includes('BEGIN PRIVATE KEY'), `private key in ${name}`)
     if (name.startsWith('package/lib/')) assert(!/\/(?:Users|home)\//u.test(text), `development path in ${name}`)
   }
-  return { manifest, entries, files, sha256, bytes: bytes.byteLength }
+  return { manifest, entries, files, sha256, bytes: bytes.byteLength, stubbedPlatformRows: stubbed }
 }

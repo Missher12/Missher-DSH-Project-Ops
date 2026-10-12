@@ -1,6 +1,6 @@
 {
   "name": "@missher/dsh-project-ops",
-  "version": "0.4.0-alpha.1",
+  "version": "0.4.0-alpha.2",
   "description": "Project Ops：项目开发方案、交付记录与原生任务验证",
   "private": false,
   "type": "module",
@@ -40,7 +40,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke:package": "node scripts/smoke.mjs",
     "smoke:clean": "node scripts/smoke-clean.mjs",
-    "smoke:profile": "node scripts/smoke-profile.mjs"
+    "smoke:profile": "node scripts/smoke-profile.mjs",
+    "check:ui": "node scripts/check-ui-contract.mjs"
   },
   "license": "MIT",
   "repository": {

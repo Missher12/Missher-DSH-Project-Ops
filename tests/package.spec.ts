@@ -24,7 +24,7 @@ describe('Bundle package', () => {
       peerDependencies: Record<string, string>
       peerDependenciesMeta: Record<string, { optional?: boolean }>
     }
-    expect(manifest.version).toBe('0.4.0-alpha.1')
+    expect(manifest.version).toBe('0.4.0-alpha.2')
     expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.2.1-alpha.2')
     expect(Object.keys(manifest.peerDependenciesMeta).sort()).toEqual(Object.keys(manifest.peerDependencies).sort())
     expect(Object.values(manifest.peerDependenciesMeta).every(meta => meta.optional === true)).toBe(true)
