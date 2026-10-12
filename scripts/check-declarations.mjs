@@ -15,8 +15,9 @@ const host = createHostResolver(hostRoot ?? root)
 assert(process.env.PROJECT_OPS_ARCHIVE, 'set PROJECT_OPS_ARCHIVE to the fixed candidate tgz')
 assert(process.env.PROJECT_OPS_ARCHIVE_SHA256, 'set PROJECT_OPS_ARCHIVE_SHA256')
 const archive = resolve(process.env.PROJECT_OPS_ARCHIVE)
+host.resolvePackage('@deepseek-ai/cordis', '4.0.5-alpha.1')
 const inspected = inspectArchive(archive, process.env.PROJECT_OPS_ARCHIVE_SHA256)
-const peerTypes = Object.fromEntries(Object.keys(inspected.manifest.peerDependencies).map(name => {
+const peerTypes = Object.fromEntries(Object.keys(inspected.manifest.peerDependencies).filter(name => name !== 'react').map(name => {
   const { manifestPath, manifest } = host.resolvePackage(name, inspected.manifest.peerDependencies[name])
   const types = manifest.exports?.['.']?.types ?? manifest.types
   assert.equal(typeof types, 'string', `missing peer declaration entry: ${name}`)
@@ -34,19 +35,22 @@ for (const [name, text] of inspected.files) {
 const tsconfig = {
   compilerOptions: { target: 'ES2024', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true,
     skipLibCheck: false, noEmit: true, types: ['node'], paths: {
-      'dsh-project-ops': [join(packageRoot, 'lib/index.d.ts')],
-      'dsh-project-ops/cordis': [join(packageRoot, 'lib/cordis.d.ts')],
+      '@missher/dsh-project-ops': [join(packageRoot, 'lib/index.d.ts')],
+      '@missher/dsh-project-ops/cordis': [join(packageRoot, 'lib/cordis.d.ts')],
+      '@missher/dsh-project-ops/client': [join(packageRoot, 'lib/client/index.d.ts')],
       ...peerTypes,
     } },
   files: ['consumer.mts'],
 }
 writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify(tsconfig, null, 2))
-writeFileSync(join(directory, 'consumer.mts'), `import * as Harness from 'dsh-project-ops'
-import * as Portable from 'dsh-project-ops/cordis'
+writeFileSync(join(directory, 'consumer.mts'), `import * as Harness from '@missher/dsh-project-ops'
+import * as Portable from '@missher/dsh-project-ops/cordis'
+import * as Client from '@missher/dsh-project-ops/client'
 import type { Context } from '@deepseek-ai/cordis'
 declare const ctx: Context
 Harness.apply(ctx, { snapshotOutputDirectories: ['dist'] })
 Portable.apply(ctx)
+Client.apply(ctx)
 // @ts-expect-error public config rejects non-string output paths
 Harness.apply(ctx, { snapshotOutputDirectories: [42] })
 // @ts-expect-error public host contract requires its scope and native call services
@@ -58,7 +62,7 @@ const report = { passed: true, archive, archiveSha256: inspected.sha256, archive
   source: 'declarations copied from the checked tgz, no source path alias', compiler,
   compilerVersion: JSON.parse(readFileSync(require.resolve('typescript/package.json'), 'utf8')).version,
   strict: true, skipLibCheck: false, node: process.version, hostRoot: hostRoot ?? null, hostInstallation: host.installation, peerTypes,
-  entryHashes: Object.fromEntries(['index', 'cordis'].map(name => [name, createHash('sha256').update(inspected.files.get(`package/lib/${name}.d.ts`)).digest('hex')])) }
+  entryHashes: Object.fromEntries(['index', 'cordis', 'client/index'].map(name => [name, createHash('sha256').update(inspected.files.get(`package/lib/${name}.d.ts`)).digest('hex')])) }
 const reportPath = join(directory, 'report.json')
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n')
 console.log(JSON.stringify({ passed: true, evidence: reportPath, archiveSha256: inspected.sha256 }))

@@ -51,12 +51,12 @@ test('accepts explicit pnpm package links and records logical and real manifests
   const source = join(root, 'node_modules/@deepseek-ai/cordis')
   symlinkSync(realpathSync(source), join(modules, '@deepseek-ai/cordis'), 'junction')
   const selected = createHostResolver(host)
-  const actual = selected.resolvePackage('@deepseek-ai/cordis', '4.0.2')
+  const actual = selected.resolvePackage('@deepseek-ai/cordis', '4.0.5-alpha.1')
   expect(actual.manifestPath).toBe(realpathSync(join(source, 'package.json')))
   expect(selected.installation.packages['@deepseek-ai/cordis'].anchor)
     .toBe(join(modules, '@deepseek-ai/cordis/package.json'))
   // An installed sibling at the development ancestor cannot fill a missing host link.
-  expect(() => selected.resolvePackage('@deepseek-ai/dsh', '0.1.5-rc.2')).toThrow('selected host')
+  expect(() => selected.resolvePackage('@deepseek-ai/dsh', '0.2.1-alpha.2')).toThrow('selected host')
 })
 
 test('rejects a manifest that is not a project object', () => {

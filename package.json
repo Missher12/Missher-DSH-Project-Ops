@@ -1,7 +1,7 @@
 {
-  "name": "dsh-project-ops",
-  "version": "0.3.1",
-  "description": "Cordis project task planning and verification with native Harness execution",
+  "name": "@missher/dsh-project-ops",
+  "version": "0.4.0-alpha.1",
+  "description": "Project Ops：项目开发方案、交付记录与原生任务验证",
   "private": false,
   "type": "module",
   "main": "lib/index.js",
@@ -16,6 +16,10 @@
     "./cordis": {
       "types": "./lib/cordis.d.ts",
       "default": "./lib/cordis.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/browser/client.js"
     }
   },
   "files": [
@@ -27,10 +31,11 @@
     "docs/CORDIS_INTEGRATION.md",
     "docs/OFFICIAL_COMPAT.md",
     "README.i18n.yaml",
-    "LICENSE"
+    "LICENSE",
+    "docs/TASK_DOCUMENTS.md"
   ],
   "scripts": {
-    "build": "tsdown --config tsdown.config.ts",
+    "build": "node scripts/build.mjs",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke:package": "node scripts/smoke.mjs",
@@ -40,11 +45,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Missher12/dsh-project-ops.git"
+    "url": "git+https://github.com/Missher12/Missher-DSH-Project-Ops.git"
   },
-  "homepage": "https://github.com/Missher12/dsh-project-ops#readme",
+  "homepage": "https://github.com/Missher12/Missher-DSH-Project-Ops#readme",
   "bugs": {
-    "url": "https://github.com/Missher12/dsh-project-ops/issues"
+    "url": "https://github.com/Missher12/Missher-DSH-Project-Ops/issues"
   },
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -53,16 +58,27 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-workspace-files",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-agent": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-fs": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-jobs": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-util-values": "0.1.5-rc.2"
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-jobs": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-util-values": "0.2.1-alpha.2",
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -85,25 +101,41 @@
     },
     "@deepseek-ai/dsh-util-values": {
       "optional": true
+    },
+    "react": {
+      "optional": true
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-agent": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-fs": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-jobs": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-jobs-local": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-scope": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-session": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-agent": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs-local": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-jobs": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-jobs-local": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-scope": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-session": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
     "@types/node": "^22.20.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
-    "@deepseek-ai/dsh-util-values": "0.1.5-rc.2"
+    "@deepseek-ai/dsh-util-values": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-sandbox-policy": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs-observation-policy": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-api-remotes": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-api-workspace-files": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.1-alpha.2",
+    "react": "^18.2.0",
+    "@types/react": "~18.3.1"
   }
 }

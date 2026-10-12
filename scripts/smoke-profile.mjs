@@ -11,7 +11,7 @@ import { createHostResolver } from './selected-host.mjs'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRoot = process.env.PROJECT_OPS_HOST_ROOT ? resolve(process.env.PROJECT_OPS_HOST_ROOT) : undefined
 const host = createHostResolver(hostRoot ?? root)
-const { manifestPath: dshManifestPath, manifest: dshManifest } = host.resolvePackage('@deepseek-ai/dsh', '0.1.5-rc.2')
+const { manifestPath: dshManifestPath, manifest: dshManifest } = host.resolvePackage('@deepseek-ai/dsh', '0.2.1-alpha.2')
 const cli = join(dirname(dshManifestPath), 'lib/bin.js')
 const nodeBinary = process.env.PROJECT_OPS_NODE ? resolve(process.env.PROJECT_OPS_NODE) : process.execPath
 const overlay = process.env.PROJECT_OPS_EXTRA_PATCH ? resolve(process.env.PROJECT_OPS_EXTRA_PATCH) : undefined
@@ -66,14 +66,14 @@ try {
   dsh(['--profile', profile, '--from-default-profile', 'headless', '--dump-config'])
   dsh(['plugin', '--profile', profile, 'add', archive])
   const installed = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))
-  assert(installed.dsh.profile.bundles.includes('dsh-project-ops'))
+  assert(installed.dsh.profile.bundles.includes('@missher/dsh-project-ops'))
   const app = join(workspace, 'packages/app')
   mkdirSync(app, { recursive: true })
   writeFileSync(join(workspace, 'package.json'), JSON.stringify({ private: true, packageManager: 'npm@10', workspaces: ['packages/*'] }))
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: '@profile/app', scripts: { verify: 'node verify.cjs', long: 'node long.cjs' } }))
   writeFileSync(join(app, 'input.js'), 'export const changed = false\n')
   writeFileSync(join(app, 'verify.cjs'), "const fs = require('node:fs'); fs.mkdirSync('.output', {recursive:true}); fs.writeFileSync('.output/verified', 'yes');\n")
-  writeFileSync(join(app, 'long.cjs'), "const fs = require('node:fs'); fs.mkdirSync('.output', {recursive:true}); fs.writeFileSync('.output/pid', String(process.pid)); setInterval(() => {}, 1000);\n")
+  writeFileSync(join(app, 'long.cjs'), "const fs = require('node:fs'); fs.mkdirSync('.output', {recursive:true}); fs.writeFileSync('.output/pid', String(process.pid)); setInterval(() => fs.writeFileSync('.output/heartbeat', String(Date.now())), 50);\n")
   const fixture = join(profileDir, 'project-ops-probe.mjs')
   cpSync(join(root, 'scripts/fixtures/official-profile.mjs'), fixture)
   cpSync(join(root, 'scripts/fixtures/probe-evidence.mjs'), join(profileDir, 'probe-evidence.mjs'))
@@ -95,7 +95,7 @@ try {
   const actual = JSON.parse(readFileSync(join(directory, 'installed.json'), 'utf8'))
   assert.equal(actual.passed, true)
   assert.deepEqual(actual.modelProjection, JSON.parse(readFileSync(join(root, 'tests/fixtures/official-profile.expected.json'), 'utf8')))
-  dsh(['plugin', '--profile', profile, 'remove', 'dsh-project-ops'])
+  dsh(['plugin', '--profile', profile, 'remove', '@missher/dsh-project-ops'])
   configure(true)
   console.log('official-profile: checking tool and prompt absence after CLI removal')
   dsh(['--profile', profile, ...overlay ? ['--patch', overlay] : []])
@@ -103,7 +103,7 @@ try {
   assert.equal(removed.passed, true)
   assert.equal(sentinel(), before)
   const report = { passed: true, officialVersion: dshManifest.version,
-    officialReferenceSha: 'fb2c4b9e698e30edb738bca4cf0618587db7d203',
+    officialReferenceSha: 'd743267388641bc76f17c45ce8b4c231aed1d32c',
     runtimeSource: hostRoot ? 'Explicit caller-supplied runtime; package version is not source-SHA attestation' : 'Exact public npm packages from this checkout lockfile',
     hostRoot: hostRoot ?? null, hostInstallation: host.installation, nodeBinary, cli,
     extraPatch: overlay ? { path: overlay, sha256: createHash('sha256').update(readFileSync(overlay)).digest('hex') } : null,

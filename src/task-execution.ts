@@ -1,4 +1,4 @@
-import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { JobView } from '@deepseek-ai/dsh-jobs'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ExecutionReceipt, ProjectTask } from './contracts.ts'
 export type { ExecutionReceipt } from './contracts.ts'
@@ -29,7 +29,7 @@ export interface JobReceiptInput {
   jobId: string
   startedAt: string
   durationMs: number
-  snapshot: JobSnapshot
+  snapshot: JobView
   output?: string
 }
 
@@ -83,17 +83,17 @@ function foregroundOutcome(input: ReceiptInput): ExecutionOutcome {
   return code === undefined ? 'unavailable' : code !== 0 ? 'failed' : 'succeeded'
 }
 
-function jobExitCode(snapshot: JobSnapshot): number | undefined {
+function jobExitCode(snapshot: JobView): number | undefined {
   const match = /(?:^|\b)exit code:\s*(-?\d+)(?:\b|$)/u.exec(snapshot.detail ?? '')
   return match === null ? undefined : Number(match[1])
 }
 
-function jobOutcome(snapshot: JobSnapshot, output: string | undefined): ExecutionOutcome {
+function jobOutcome(snapshot: JobView, output: string | undefined): ExecutionOutcome {
   if (snapshot.status === 'running' || snapshot.status === 'stopping') return 'running'
   if (snapshot.status === 'killed') return 'aborted'
   if (snapshot.status === 'failed') return 'failed'
-  if (/\[sandbox: the sandbox runner itself failed/u.test(output ?? '')) return 'failed'
-  if (/\[sandbox: file access denied under [^\]]+\]/u.test(output ?? '')) return 'blocked'
+  if (/\[sandbox: the sandbox runner itself failed/u.test(`${snapshot.detail ?? ''} ${output ?? ''}`)) return 'failed'
+  if (/\[sandbox: file access denied under [^\]]+\]/u.test(`${snapshot.detail ?? ''} ${output ?? ''}`)) return 'blocked'
   const code = jobExitCode(snapshot)
   return code === undefined ? 'unavailable' : code !== 0 ? 'failed' : 'succeeded'
 }

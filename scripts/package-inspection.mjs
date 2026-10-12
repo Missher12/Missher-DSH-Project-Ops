@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm'
+import { createRequire } from 'node:module'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -6,13 +8,13 @@ import { readFileSync } from 'node:fs'
 export const REQUIRED_ENTRIES = [
   'LICENSE', 'README.md', 'README.zh.md', 'README.i18n.yaml', 'package.json', 'cordis.patch.yml',
   'docs/AGENT_USAGE.md', 'docs/CORDIS_INTEGRATION.md', 'docs/OFFICIAL_COMPAT.md',
-  'lib/index.js', 'lib/index.d.ts', 'lib/cordis.js', 'lib/cordis.d.ts',
+  'lib/browser/client.js', 'lib/client/index.js', 'lib/client/index.d.ts', 'lib/index.js', 'lib/index.d.ts', 'lib/cordis.js', 'lib/cordis.d.ts',
 ].map(name => `package/${name}`)
-const ALLOWED_ENTRY = /^package\/(?:lib\/[A-Za-z0-9_.-]+\.(?:js|d\.ts)|docs\/(?:AGENT_USAGE|CORDIS_INTEGRATION|OFFICIAL_COMPAT)\.md|README(?:\.zh\.md|\.md|\.i18n\.yaml)|LICENSE|cordis\.patch\.yml|package\.json)$/u
+const ALLOWED_ENTRY = /^package\/(?:lib\/(?:(?:client|browser)\/)?[A-Za-z0-9_.-]+\.(?:js|d\.ts)|docs\/(?:AGENT_USAGE|CORDIS_INTEGRATION|OFFICIAL_COMPAT|TASK_DOCUMENTS)\.md|README(?:\.zh\.md|\.md|\.i18n\.yaml)|LICENSE|cordis\.patch\.yml|package\.json)$/u
 
 /** Validate the package's public entries, exact host peers and Bundle declaration. */
 export function assertPackageManifest(manifest) {
-  assert.equal(manifest.name, 'dsh-project-ops')
+  assert.equal(manifest.name, '@missher/dsh-project-ops')
   assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/u)
   assert.equal(manifest.type, 'module')
   assert.equal(manifest.main, 'lib/index.js')
@@ -21,9 +23,9 @@ export function assertPackageManifest(manifest) {
   assert.deepEqual(manifest.exports['.'], { types: './lib/index.d.ts', default: './lib/index.js' })
   assert.deepEqual(manifest.exports['./cordis'], { types: './lib/cordis.d.ts', default: './lib/cordis.js' })
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
-  assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '4.0.2')
+  assert.equal(manifest.peerDependencies['@deepseek-ai/cordis'], '4.0.5-alpha.1')
   for (const name of ['agent', 'fs', 'jobs', 'llm', 'tools', 'util-values']) {
-    assert.equal(manifest.peerDependencies[`@deepseek-ai/dsh-${name}`], '0.1.5-rc.2')
+    assert.equal(manifest.peerDependencies[`@deepseek-ai/dsh-${name}`], '0.2.1-alpha.2')
   }
   assert.deepEqual(Object.keys(manifest.peerDependenciesMeta).sort(), Object.keys(manifest.peerDependencies).sort())
   assert(Object.values(manifest.peerDependenciesMeta).every(value => value.optional === true))
@@ -51,7 +53,13 @@ export function inspectArchive(archive, expectedSha256) {
   const files = new Map(entries.map(entry => [entry, tar(['-xOf', archive, entry])]))
   const manifest = JSON.parse(files.get('package/package.json'))
   assertPackageManifest(manifest)
-  assert.equal(files.get('package/cordis.patch.yml'), '- insert:\n    - id: missher-project-ops\n      name: dsh-project-ops\n')
+  assert.equal(manifest.exports['./client'].default, './lib/browser/client.js')
+  let client
+  runInNewContext(files.get('package/lib/browser/client.js'), { window: { __ModuleLoader__: { load: value => { client = value } } } }, { timeout: 1000 })
+  assert.equal(client?.id, '@missher/dsh-project-ops')
+  const loaded = client.factory(createRequire(import.meta.url))
+  assert.equal(typeof loaded.apply, 'function')
+  assert.equal(files.get('package/cordis.patch.yml'), '- insert:\n    - id: missher-project-ops\n      name: "@missher/dsh-project-ops"\n')
   for (const [name, text] of files) {
     assert(!text.includes('sourceMappingURL='), `source map reference in ${name}`)
     assert(!text.includes('BEGIN PRIVATE KEY'), `private key in ${name}`)

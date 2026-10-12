@@ -36,7 +36,7 @@ async function probe(ctx, config, signal, evidence) {
     return { passed: true, phase: 'removed', tools: [], guidance: false,
       runtime: { node: process.version, platform: process.platform, arch: process.arch } }
   }
-  assert.equal(names.length, 7)
+  assert.equal(names.length, 9)
   assert(prompt.sections.some(section => section.name === 'missher-project-ops:agent-guidance'))
   const handles = []
   const outstanding = new Set()
@@ -50,9 +50,14 @@ async function probe(ctx, config, signal, evidence) {
   const stranger = await create('project-ops-profile-stranger')
   const shell = process.platform === 'win32' ? 'pwsh' : 'bash'
   const originalShell = ctx.tools.get(shell, owner)
-  const nativeShell = { ...originalShell, execute: (args, exec) => evidence.observe('native', {
-    tool: shell, callId: exec.callId ?? 'unavailable', requestedWorkdir: args.workdir ?? 'unavailable',
-  }, () => originalShell.execute(args, exec)) }
+  let afterNative = () => {}
+  const nativeShell = { ...originalShell, async execute(args, exec) {
+    const value = await evidence.observe('native', {
+      tool: shell, callId: exec.callId ?? 'unavailable', requestedWorkdir: args.workdir ?? 'unavailable',
+    }, () => originalShell.execute(args, exec))
+    afterNative(value, exec)
+    return value
+  } }
   const removeNativeObserver = owner.ctx.tools.register(nativeShell)
   let sequence = 0
   const result = (name, args, agent = owner) => {
@@ -69,6 +74,9 @@ async function probe(ctx, config, signal, evidence) {
   }
   const checks = []
   try {
+    const development = await call('missher_project_ops_document_write', { action: 'begin', slug: 'profile-acceptance', data: { title: 'Profile acceptance', requirements: 'Real Host document persistence', design: 'Native filesystem', steps: ['write', 'review'], acceptance: ['files on disk'], progress: 'started' } })
+    assert(existsSync(join(config.workspace, development.planPath)))
+    checks.push('development-plan-real-file')
     const doctor = await call('missher_project_ops_doctor', {})
     assert.equal(doctor.sourceSnapshot, true)
     assert.equal(doctor.foreground, true)
@@ -77,7 +85,13 @@ async function probe(ctx, config, signal, evidence) {
     const task = plan.tasks.find(row => row.id === 'package@packages/app:verify')
     assert(task)
     const runArgs = { taskId: task.id, manifestDigest: task.manifestDigest }
-    const ran = await call('missher_project_ops_task_run', runArgs)
+    let ran = await call('missher_project_ops_task_run', runArgs)
+    if (ran.receipt.outcome === 'running') {
+      outstanding.add(ran.receipt.jobId)
+      const r = ran.receipt
+      ran = await call('missher_project_ops_task_collect', { taskId: r.taskId, manifestDigest: r.manifestDigest, jobId: r.jobId, nestedCallId: r.nestedCallId, startedAt: r.startedAt, waitMs: 10000 })
+      outstanding.delete(r.jobId)
+    }
     assert.equal(ran.receipt.outcome, 'succeeded')
     const verifiedFile = existsSync(join(config.workspace, 'packages/app/.output/verified'))
     evidence.record('verified-file', { exists: verifiedFile })
@@ -85,21 +99,30 @@ async function probe(ctx, config, signal, evidence) {
     const gateArgs = { ...planArgs, planDigest: plan.planDigest, receipts: [ran.receipt] }
     assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'passed')
     checks.push('declared-workspace-execution', 'verification-passed')
+    const delivery = await call('missher_project_ops_document_write', { action: 'finish', taskId: development.taskId, expectedRevision: development.revision, verification: gateArgs, data: { implementation: 'Profile writes PLAN and READY', checks: [{ criterion: 'files on disk', status: 'reported-pass', evidence: 'Node filesystem read-back in isolated workspace' }], artifacts: [development.planPath], git: 'not committed', release: 'not released', installation: 'isolated profile only', limitations: ['No real model or native Desktop'], rollback: 'remove isolated profile' } })
+    assert(delivery.readyValid)
+    assert(delivery.verification.includes('passed'))
+    assert(readFileSync(join(config.workspace, delivery.readyPath), 'utf8').includes('not released'))
+    assert.equal((await result('missher_project_ops_document_write', { action: 'update', taskId: development.taskId, expectedRevision: delivery.revision, data: {} }, stranger)).isError, true)
+    checks.push('development-ready-real-file', 'development-session-fence')
 
     // Wrap the already-visible official shell definition in this Agent's scope; execute its real body.
     const message = createUserMessage({ content: [{ type: 'text', text: 'Profile fixture context.' }],
       source: { kind: 'plugin', plugin: name } })
-    const removeWrapper = owner.ctx.tools.register({ ...nativeShell, async execute(args, exec) {
-      const value = await nativeShell.execute(args, exec)
-      exec.deferContext(message)
-      exec.concludeTurn()
-      return value
-    } })
+    afterNative = (_value, exec) => { exec.deferContext(message); exec.concludeTurn() }
     const forwarded = await result('missher_project_ops_task_run', runArgs)
-    removeWrapper()
+    afterNative = () => {}
     assert.equal(forwarded.isError, false)
     assert.deepEqual(forwarded.additionalContexts, [message])
     assert.equal(forwarded.concludesTurn, true)
+    let forwardedOutcome = forwarded.value.receipt.outcome
+    if (forwardedOutcome === 'running') {
+      const r = forwarded.value.receipt
+      outstanding.add(r.jobId)
+      forwardedOutcome = (await call('missher_project_ops_task_collect', { taskId: r.taskId, manifestDigest: r.manifestDigest, jobId: r.jobId, nestedCallId: r.nestedCallId, startedAt: r.startedAt, waitMs: 10000 })).receipt.outcome
+      outstanding.delete(r.jobId)
+    }
+    assert.equal(forwardedOutcome, 'succeeded')
     checks.push('nested-context-and-conclusion')
 
     const reject = owner.ctx.on('tools/pre-execute', (exec, next) => exec.name === shell
@@ -133,37 +156,44 @@ async function probe(ctx, config, signal, evidence) {
       nestedCallId: receipt.nestedCallId, startedAt: receipt.startedAt, waitMs: 10000,
     })
     assert.equal(collected.receipt.outcome, 'aborted')
-    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
+    const heartbeat = join(config.workspace, 'packages/app/.output/heartbeat')
+    const settledHeartbeat = existsSync(heartbeat) ? readFileSync(heartbeat, 'utf8') : 'absent'
+    await delay(300, undefined, { signal })
+    assert.equal(existsSync(heartbeat) ? readFileSync(heartbeat, 'utf8') : 'absent', settledHeartbeat)
+    evidence.record('cancelled-producer-heartbeat', { stoppedAcrossMs: 300, namespacePid: pid, hostPidProbe: 'not-applicable: sandbox PID namespaces' })
     outstanding.delete(receipt.jobId)
-    checks.push('background-wait', 'foreign-owner-denied', 'native-cancel-and-process-exit')
+    checks.push('background-wait', 'foreign-owner-denied', 'native-cancel-settled-and-heartbeat-stopped')
 
     let timeoutResult
-    const removeTimeoutObserver = owner.ctx.tools.register({ ...nativeShell, async execute(args, exec) {
-      timeoutResult = await nativeShell.execute(args, exec)
-      return timeoutResult
-    } })
+    afterNative = value => { timeoutResult = value }
     const timed = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest })
-    removeTimeoutObserver()
-    assert.equal(timeoutResult.timedOut, true)
-    // The unchanged receipt core classifies a termination signal as aborted, including timeout kills.
-    assert(['failed', 'aborted'].includes(timed.receipt.outcome))
-    checks.push('foreground-timeout')
+    afterNative = () => {}
+    assert.equal(timeoutResult.kind, 'promoted')
+    assert.equal(timed.receipt.outcome, 'running')
+    assert.equal(timed.receipt.executionMode, 'background')
+    outstanding.add(timed.receipt.jobId)
+    await call('job_kill', { job_id: timed.receipt.jobId })
+    const promoted = timed.receipt
+    const stopped = await call('missher_project_ops_task_collect', { taskId: promoted.taskId, manifestDigest: promoted.manifestDigest, jobId: promoted.jobId, nestedCallId: promoted.nestedCallId, startedAt: promoted.startedAt, waitMs: 10000 })
+    assert.equal(stopped.receipt.outcome, 'aborted')
+    outstanding.delete(promoted.jobId)
+    checks.push('foreground-promotion-retains-native-job', 'promoted-job-cancelled')
     writeFileSync(join(config.workspace, 'packages/app/input.js'), 'export const changed = true\n')
     assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'stale')
     checks.push('source-edit-invalidates-receipt')
     return { passed: true, phase: 'installed', tools: names, guidance: true, checks,
       runtime: { node: process.version, platform: process.platform, arch: process.arch },
-      timeout: { timedOut: timeoutResult.timedOut, signal: timeoutResult.signal, receiptOutcome: timed.receipt.outcome },
+      timeout: { kind: timeoutResult.kind, receiptOutcome: timed.receipt.outcome },
       modelProjection: { contexts: forwarded.additionalContexts.map(row => ({ role: row.role, source: row.source, content: row.content })),
-        concludesTurn: forwarded.concludesTurn, outcome: forwarded.value.receipt.outcome } }
+        concludesTurn: forwarded.concludesTurn, outcome: forwardedOutcome } }
   } catch (error) {
     evidence.recordError('check-error', error)
     throw error
   } finally {
     removeNativeObserver()
     for (const id of outstanding) {
-      ctx.jobs.kill(id, owner)
-      await ctx.jobs.wait(id, 10000, owner)
+      ctx.jobs.kill(id, owner.session.id)
+      await ctx.jobs.wait(id, 10000, owner.session.id)
     }
     for (const handle of handles.reverse()) await handle.dispose()
   }

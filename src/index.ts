@@ -1,3 +1,5 @@
+import { RECEIPT_SCHEMA } from './receipt-schema.ts'
+import { registerDocumentTools } from './document-tools.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -102,29 +104,6 @@ const DIAGNOSTIC_SCHEMA = {
   },
 } as const
 
-const RECEIPT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    receiptVersion: { type: 'integer', enum: [2, 3], required: true },
-    executionId: { type: 'string' },
-    sourceDigest: { type: 'string' },
-    freshness: { type: 'string', enum: ['stable', 'changed', 'unavailable'] },
-    taskId: { type: 'string', required: true },
-    source: { type: 'string', enum: ['package', 'make', 'just'], required: true },
-    workspace: { type: 'string', required: true },
-    purpose: { type: 'string', enum: ['test', 'lint', 'typecheck', 'build', 'format', 'other'], required: true },
-    manifestDigest: { type: 'string', required: true },
-    executionMode: { type: 'string', enum: ['foreground', 'background'], required: true },
-    executorTool: { type: 'string' },
-    nestedCallId: { type: 'string', required: true },
-    jobId: { type: 'string' },
-    startedAt: { type: 'string', required: true },
-    durationMs: { type: 'integer', required: true },
-    outcome: { type: 'string', enum: ['running', 'succeeded', 'failed', 'blocked', 'aborted', 'unavailable'], required: true },
-    exitCode: { type: 'integer' },
-  },
-} as const
 
 const GATE_SCHEMA = {
   type: 'object',
@@ -359,6 +338,7 @@ export function apply(ctx: Context, config: HarnessConfig = {}): void {
       text: PROJECT_OPS_AGENT_GUIDANCE,
     })
   }
+  registerDocumentTools(ctx, service)
   ctx.tools.register(taskListTool(service))
   ctx.tools.register(taskPlanTool(service))
   ctx.tools.register(taskRunTool(service))

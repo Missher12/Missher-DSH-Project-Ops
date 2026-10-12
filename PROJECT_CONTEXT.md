@@ -1,3 +1,13 @@
+# Project Ops 当前上下文（2026-10-12）
+
+当前唯一业务源码：本恢复仓库；Git 基线 44fc988f511f1d16f6b8ff29de03dacdc36aa58c，候选 @missher/dsh-project-ops 0.4.0-alpha.1，官方 npm Host 0.2.1-alpha.2 / Cordis 4.0.5-alpha.1。主显示名 Project Ops。新增 PLAN/READY 文档与原生客户端入口，保留原七工具。
+
+本次任务方案与当前交付记录见 docs/tasks/2026-10-12-task-documents-44fc988/。最终 Git/Release/日常安装归桌面负责人；本任务只交冻结候选。最终桌面 Host 尚未冻结，组合验证待其统一执行。无模型调用、无日常安装。
+
+以下为历史架构参考；历史路径/版本/状态不得作为当前操作依据。
+
+---
+
 # dsh-project-ops 项目上下文
 
 ## 项目目标
@@ -60,7 +70,7 @@
 ## 2026-09-06 历史维护基线与数据流（0.2.x）
 
 - 原始独立仓库：`Missher12/dsh-project-ops`，main 基线 `f6f7d0117bf448c50b945afbf499e7bcac04ba9c`，开始时干净，无仓库内 AGENTS.md；遵循用户会话指令。
-- 隔离工作树：`/Users/missher/Documents/ChatGPT/dsh-project-ops-maintenance`；分支 `codex/project-ops-stability-20260906`。其他策略工作树保持原状。
+- 隔离工作树：`<project-worktree>/dsh-project-ops-maintenance`；分支 `codex/project-ops-stability-20260906`。其他策略工作树保持原状。
 - 执行链：有界发现与上下文指纹 → 包影响闭包与同用途拓扑 → 新鲜度/完整性校验 → Agent 可见原生 shell（parent/rootCallId/signal 不变）→ 原生 Jobs → 分派关联校验 → 输出无关回执 → 重算门禁。
 - `manifestDigest` 字段保持兼容形状，含义扩展；旧摘要会失效，须重新发现/规划/执行。摘要覆盖全部发现清单、根 lockfile、.npmrc、.yarnrc.yml、tsconfig.json、turbo.json、nx.json 和调用信息。每个文件限 1 MiB，不递归读取配置引用。
 - 收集绑定仅在插件激活期间存在，最多 4096 次后台启动；不维护 job 状态、不调度、不启动自有定时器。重载后用原生 job_output/job_kill 处理旧 job，不能伪造恢复插件回执。

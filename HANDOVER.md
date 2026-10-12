@@ -1,3 +1,13 @@
+# Project Ops 当前交接（2026-10-12）
+
+本轮唯一有效交付入口：[READY](docs/tasks/2026-10-12-task-documents-44fc988/READY.md)。主显示名 Project Ops，包 @missher/dsh-project-ops 0.4.0-alpha.1。源码由本 chat 单写；最终 Git/Release/日常安装由桌面 chat 01a12ddd-e1d8-7cb0-924c-8885df3afefa 统一完成。
+
+当前工作区与冻结产物均位于 DSH-Recovery-20261012；旧迁移路径不可作为操作目标。正式候选与精确证据见 READY，不能用下面历史 S2 验收替代。
+
+以下保留历史交接供追溯。
+
+---
+
 # Project Ops S2 官方兼容交接
 
 ## 结果与范围
@@ -9,7 +19,7 @@
 ## 来源与版本
 
 - 独立仓库：Missher12/dsh-project-ops。
-- 工作树：/Users/missher/Documents/ChatGPT/dsh-project-ops/.worktrees/official-compat-20260912。
+- 工作树：<project-worktree>/official-compat-20260912。
 - 分支：codex/project-ops-official-compat-20260912。
 - 承接维护源：0.3.0 / 06849534c3352dd26b6fc2e38e9ef30e49fbf9ef。
 - 最新公开插件：0.2.0；远端默认 HEAD f6f7d0117bf448c50b945afbf499e7bcac04ba9c，来自总指挥 2026-09-12 15:28:17 UTC 的 VERSION-AUDIT.json。

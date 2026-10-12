@@ -11,10 +11,10 @@ describe('Bundle package', () => {
       name: string
       dsh: { bundle: { patch: string } }
     }
-    expect(manifest.name).toBe('dsh-project-ops')
+    expect(manifest.name).toBe('@missher/dsh-project-ops')
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')).toBe(
-      '- insert:\n    - id: missher-project-ops\n      name: dsh-project-ops\n',
+      '- insert:\n    - id: missher-project-ops\n      name: "@missher/dsh-project-ops"\n',
     )
   })
 
@@ -24,8 +24,8 @@ describe('Bundle package', () => {
       peerDependencies: Record<string, string>
       peerDependenciesMeta: Record<string, { optional?: boolean }>
     }
-    expect(manifest.version).toBe('0.3.1')
-    expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.1.5-rc.2')
+    expect(manifest.version).toBe('0.4.0-alpha.1')
+    expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.2.1-alpha.2')
     expect(Object.keys(manifest.peerDependenciesMeta).sort()).toEqual(Object.keys(manifest.peerDependencies).sort())
     expect(Object.values(manifest.peerDependenciesMeta).every(meta => meta.optional === true)).toBe(true)
   })

@@ -1,0 +1,20 @@
+{
+  "version": "0.4.0-alpha.1",
+  "date": "2026-10-12",
+  "scope": "source and matching frozen runtime; no release or installation implied",
+  "sourceBase": "44fc988f511f1d16f6b8ff29de03dacdc36aa58c",
+  "frozenPackageSha256": "a22557c067c3e88c73593c0e7bcb32512600c19d8a201ee5a670d8b0c0f88dd4",
+  "runtimeFiles": {
+    "lib/agent-guidance-BQfg25Bc.js": "62af8da2dcb496613045b3564800927daeea2950e34819e839956bab98bf3f21",
+    "lib/browser/client.js": "7aef228fe1b68eb992e8d50a244026f81ad5b5a215044ba9a94c54ba8c895a93",
+    "lib/cordis.js": "5cec363798af4549972231019178f3ad9902ffb293d1eb2047e0d0cf957f18b8",
+    "lib/client/index.js": "ab7d9d08ac0e1ab9241089092ee54d757564b981a442d8b99299358d25e39316",
+    "lib/index.js": "d9f71223c77a64dc90e65ea2762363818b56f02db9530573182bb76392c29d8a",
+    "lib/cordis.d.ts": "700c02cd3830f15ea6e4a28dc3e186b8acd125d076168093a1c372caf2942cc4",
+    "lib/client/index.d.ts": "087654c14bf2e3ff1b96383ff6140b8166eb5e2ad457ca23f732500663323762",
+    "lib/index.d.ts": "a44dda01fbea22f6246320dfd625a1dc1569be7771fc46aff05c00cf381aed20"
+  },
+  "validation": "99项测试、严格声明、官方npm Host0.2.1-alpha.2独立Profile与真实Web交互通过；定制桌面组合、Intel Mac原生、真实模型自主轨迹尚未验收。",
+  "publicExportAdjustments": "Publication docs and local path placeholders only; product source and runtime unchanged.",
+  "deliveryDiffCheckWarning": "Frozen source src/receipt-schema.ts:24 contains a final blank line; exact accepted source retained. No production edit or hook bypass."
+}

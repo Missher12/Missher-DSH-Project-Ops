@@ -1,3 +1,7 @@
+# 0.4 开发任务文档
+
+当前主名称 Project Ops，包名 `@missher/dsh-project-ops`。调用 `missher_project_ops_document_read` / `missher_project_ops_document_write` 管理 PLAN 与 READY，先阅读 [任务文档说明](TASK_DOCUMENTS.md)。下文是保留的声明任务执行流程；原 systemPrompt 指引已扩展为开发文档加原生执行，普通问答不强制使用。
+
 # Project Ops Agent 使用契约
 
 这份文件是 `dsh-project-ops` 随包提供的可查阅说明。它不会被当作宿主系统提示自动读取。Bundle 激活时会把同一套短流程注册到 Harness 原生 `systemPrompt`，所以正常 Profile 不需要把这份文件复制到项目里。

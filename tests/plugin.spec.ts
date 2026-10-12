@@ -102,6 +102,8 @@ describe('Project Ops Cordis plugin', () => {
     const names = ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith('missher_project_ops_'))
 
     expect(names).toEqual([
+      'missher_project_ops_document_read',
+      'missher_project_ops_document_write',
       'missher_project_ops_task_list',
       'missher_project_ops_task_plan',
       'missher_project_ops_task_run',
@@ -271,12 +273,8 @@ describe('Project Ops Cordis plugin', () => {
           jobId: ctx.jobs.start({
             kind: platformExecutor,
             label: args.command,
-            ...(exec.agent === undefined ? {} : { owner: exec.agent }),
-            run: () => ({
-              cancel() {},
-              done: Promise.resolve({ status: 'completed', detail: 'exit code: 0' }),
-              readOutput: () => 'short task output',
-            }),
+            ...(exec.agent === undefined ? {} : { owner: exec.agent.session.id }),
+            run: job => { job.append('short task output'); return { cancel() {}, done: Promise.resolve({ status: 'completed', detail: 'exit code: 0' }) } },
           }),
         }
       },
@@ -297,7 +295,7 @@ describe('Project Ops Cordis plugin', () => {
     expect(ran.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('short task output') })
   })
 
-  test('returns a running auto receipt, then owner-fenced collection settles it', async () => {
+  test.each(['auto', 'foreground'] as const)('collects owner-fenced background or promoted work: %s', async mode => {
     const cwd = workspace()
     const { ctx } = await setup(cwd)
     const owner = agent(cwd)
@@ -319,16 +317,12 @@ describe('Project Ops Cordis plugin', () => {
       output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'started' }] },
       async execute(args, exec) {
         return {
-          kind: 'background',
+          kind: mode === 'foreground' ? 'promoted' : 'background',
           jobId: ctx.jobs.start({
             kind: platformExecutor,
             label: args.command,
-            ...(exec.agent === undefined ? {} : { owner: exec.agent }),
-            run: () => ({ cancel() {}, done, readOutput: () => {
-              const value = output
-              output = ''
-              return value
-            } }),
+            ...(exec.agent === undefined ? {} : { owner: exec.agent.session.id }),
+            run: job => { job.append(output); return { cancel() {}, done: done.then(value => { job.append(output); return value }) } },
           }),
         }
       },
@@ -338,7 +332,7 @@ describe('Project Ops Cordis plugin', () => {
     const ran = await call(ctx, owner, 'missher_project_ops_task_run', {
       taskId: task.id,
       manifestDigest: task.manifestDigest,
-      mode: 'auto',
+      mode,
       waitMs: 1,
     })
     const running = (ran as { value: { receipt: {

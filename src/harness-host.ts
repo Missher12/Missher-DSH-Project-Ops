@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
-import { JobId, type JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import { JobId, type JobView } from '@deepseek-ai/dsh-jobs'
 import { ToolCallId, type ContentBlock, type ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -122,7 +122,7 @@ function shellArguments(
 function backgroundJobId(result: ReceiptResult): string | undefined {
   if (result.isError) return undefined
   const value = record(result.value)
-  return value?.kind === 'background' && typeof value.jobId === 'string' ? value.jobId : undefined
+  return (value?.kind === 'background' || value?.kind === 'promoted') && typeof value.jobId === 'string' ? value.jobId : undefined
 }
 
 function jobContent(output: string, fallback: readonly ContentBlock[]): ContentBlock[] {
@@ -166,7 +166,8 @@ async function executeTask(ctx: Context, task: ProjectTask, args: RunArgs, exec:
   })
   forwardNestedResult(result, exec)
 
-  if (!background) {
+  const jobId = backgroundJobId(result)
+  if (!background && jobId === undefined) {
     const receipt = createReceipt({
       task,
       executorTool,
@@ -178,7 +179,6 @@ async function executeTask(ctx: Context, task: ProjectTask, args: RunArgs, exec:
     return { nestedContent: [...result.content] as unknown as JsonValue[], receipt }
   }
 
-  const jobId = backgroundJobId(result)
   if (jobId === undefined) {
     const receipt = createReceipt({
       task,
@@ -191,15 +191,15 @@ async function executeTask(ctx: Context, task: ProjectTask, args: RunArgs, exec:
     })
     return { nestedContent: [...result.content] as unknown as JsonValue[], receipt }
   }
-  let snapshot: JobSnapshot
+  let snapshot: JobView
   let output = ''
   if (mode === 'auto') {
-    snapshot = await ctx.jobs.wait(JobId(jobId), waitMs, exec.agent, exec.signal)
-    const read = ctx.jobs.read(JobId(jobId), exec.agent)
-    snapshot = read.snapshot
-    output = read.text
+    snapshot = await ctx.jobs.wait(JobId(jobId), waitMs, exec.agent?.session.id, exec.signal)
+    const read = ctx.jobs.read(JobId(jobId), exec.agent?.session.id)
+    snapshot = read.job
+    output = read.chunks.map(chunk => chunk.text).join('') + (read.result ?? '')
   } else {
-    snapshot = ctx.jobs.get(JobId(jobId), exec.agent)
+    snapshot = ctx.jobs.get(JobId(jobId), exec.agent?.session.id)
   }
   const receipt = createJobReceipt({
     task,
@@ -228,13 +228,13 @@ async function collectTask(ctx: Context, task: ProjectTask, args: CollectArgs, e
   const executorTool = executorFor(ctx, exec.agent)
   if (executorTool === undefined) throw new Error('No platform shell tool is visible to this Agent.')
   const id = JobId(args.jobId)
-  ctx.jobs.get(id, exec.agent)
-  if (args.waitMs !== undefined) await ctx.jobs.wait(id, args.waitMs, exec.agent, exec.signal)
-  const snapshot = ctx.jobs.get(id, exec.agent)
+  ctx.jobs.get(id, exec.agent?.session.id)
+  if (args.waitMs !== undefined) await ctx.jobs.wait(id, args.waitMs, exec.agent?.session.id, exec.signal)
+  const snapshot = ctx.jobs.get(id, exec.agent?.session.id)
   if (snapshot.kind !== executorTool || snapshot.label !== commandFor(task, executorTool)) {
     throw new Error('background job does not belong to the declared project task')
   }
-  const read = ctx.jobs.read(id, exec.agent)
+  const read = ctx.jobs.read(id, exec.agent?.session.id)
   const receipt = createJobReceipt({
     task,
     executorTool,
@@ -242,11 +242,11 @@ async function collectTask(ctx: Context, task: ProjectTask, args: CollectArgs, e
     jobId: args.jobId,
     startedAt: args.startedAt,
     durationMs: Date.now() - startedAtMs,
-    snapshot: read.snapshot,
-    output: read.text,
+    snapshot: read.job,
+    output: read.chunks.map(chunk => chunk.text).join('') + (read.result ?? ''),
   })
   return {
-    nestedContent: [{ type: 'text', text: read.text === '' ? '(no new job output)' : read.text }] as unknown as JsonValue[],
+    nestedContent: [{ type: 'text', text: (read.chunks.map(chunk => chunk.text).join('') + (read.result ?? '')) || '(no new job output)' }] as unknown as JsonValue[],
     receipt,
   }
 }

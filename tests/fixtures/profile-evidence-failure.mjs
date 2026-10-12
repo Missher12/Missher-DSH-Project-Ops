@@ -1,6 +1,7 @@
 // Instrumentation-only synthetic host; the child process really exits 7. Not a Harness acceptance run.
 import { spawnSync } from 'node:child_process'
-import { dirname } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { apply } from '../../scripts/fixtures/official-profile.mjs'
 
 const report = process.argv[2]
@@ -26,11 +27,12 @@ const ctx = {
     withInitiator(_agent, fn) { return fn() },
   },
   tools: {
-    schemas: () => Array.from({ length: 7 }, (_, i) => ({ name: `missher_project_ops_${i}` })),
+    schemas: () => Array.from({ length: 9 }, (_, i) => ({ name: `missher_project_ops_${i}` })),
     get: () => native,
     async execute(exec) {
       let value
-      if (exec.name.endsWith('doctor')) value = { sourceSnapshot: true, foreground: true }
+      if (exec.name.endsWith('document_write')) { writeFileSync(join(dirname(report), 'fixture-PLAN.md'), 'instrumentation fixture'); value = { planPath: 'fixture-PLAN.md' } }
+      else if (exec.name.endsWith('doctor')) value = { sourceSnapshot: true, foreground: true }
       else if (exec.name.endsWith('task_plan')) value = { tasks: [{ id: 'package@packages/app:verify', manifestDigest: 'fixture' }] }
       else {
         const returned = await native.execute({ workdir: dirname(report) }, { callId: 'synthetic-native-call' })
