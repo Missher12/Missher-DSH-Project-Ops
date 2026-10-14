@@ -4,7 +4,13 @@
 
 Project Ops 为 DeepSeek Harness 提供项目任务发现、原生执行与验证回执，以及开发方案和交付记录。包名统一为 `@missher/dsh-project-ops`，沿用本仓库，没有新增兼容插件。
 
-当前 Git 交付为 **0.4.0-alpha.2**，目标 Host 为 **0.2.1-alpha.2 / Cordis 4.0.5-alpha.1**。源码与匹配运行文件已同步；本机 Ubuntu 日常桌面已安装并查看新版入口和任务面板。GitHub Release 与 Intel Mac 原生验收尚未完成，其他设备不会因 Git 推送自动更新。当前验证范围见 [交付说明](PUBLICATION.md)，开发时的原始记录见 [本轮 READY](docs/tasks/2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e/READY.md)。
+当前产品版本为 **0.4.0-alpha.2**，已提供[正式安装包](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/latest)。本机 Ubuntu 已安装并查看新版入口和任务面板；其他设备请通过各自宿主的插件管理器更新。已测宿主、能力要求与限制分别列在下方和[交付说明](PUBLICATION.md)；[本轮 READY](docs/tasks/2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e/READY.md)保留开发时的记录。
+
+## 宿主兼容
+
+维护目标是支持合理的 DSH 版本范围，并持续适配最新版。兼容性取决于 Cordis、Agent、文件系统、Jobs、LLM、工具与客户端扩展能力；测试时的版本是验证基线，不是维护目标的上限。
+
+当前包已在 DSH `0.2.1-alpha.2` / Cordis `4.0.5-alpha.1` 完成接口与隔离 Web 检查，并在配套 Ubuntu 桌面加载。当前冻结包的 Host peer 仍是精确声明，其他版本需要核对依赖安装与接口，尚不能宣称依赖范围已经放宽。Intel Mac 的完整插件原生交互尚未验证；桌面安装器通过不等于所有插件功能通过。
 
 ## 找到入口
 
