@@ -6,6 +6,18 @@ Project Ops 为 DeepSeek Harness 提供项目任务发现、原生执行与验�
 
 当前产品版本为 **0.4.0-alpha.2**，已提供[正式安装包](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/latest)。本机 Ubuntu 已安装并查看新版入口和任务面板；其他设备请通过各自宿主的插件管理器更新。已测宿主、能力要求与限制分别列在下方和[交付说明](PUBLICATION.md)；[本轮 READY](docs/tasks/2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e/READY.md)保留开发时的记录。
 
+## 界面预览
+
+在会话标题栏打开任务面板，查看方案与交付记录：
+
+![Project Ops 任务面板，显示四种文档状态](docs/images/task-panel.jpg)
+
+点击“查看方案”后，文档直接出现在 DSH 文件预览中：
+
+![Project Ops 打开 PLAN.md 的文件预览](docs/images/plan-preview.jpg)
+
+以上为 `0.4.0-alpha.2` 在 DSH `0.2.1-alpha.2` 隔离 Web 界面的真实截图，使用合成任务，无个人会话数据。版本仅说明截图环境；当前兼容范围与未验证项见下文。
+
 ## 宿主兼容
 
 维护目标是支持合理的 DSH 版本范围，并持续适配最新版。兼容性取决于 Cordis、Agent、文件系统、Jobs、LLM、工具与客户端扩展能力；测试时的版本是验证基线，不是维护目标的上限。
