@@ -151,6 +151,64 @@ test('fixture cleanup and diagnostic failures reach the uploaded document as arr
   expect(String(document.firstError?.message)).toContain('business check failed')
 })
 
+test('a later business failure is frozen even after an expected rejection, an older success and a cleanup error', () => {
+  const directory = runRoot()
+  // The stage names come from the fixture's own check names; the snapshot is the
+  // one frozen by the real recorder, replayed here through both projections.
+  writeFileSync(join(directory, 'installed.json'), JSON.stringify({
+    passed: false,
+    error: { name: 'AssertionError', message: 'config-change-baseline: actual failed, expected succeeded' },
+    cleanupErrors: ['dispose agent handle: already disposed'],
+    // The frozen snapshot names the failing stage's own call, not the earlier
+    // successful run and not the deny that was expected to fail.
+    businessFailure: {
+      stage: 'config-change-baseline',
+      error: { name: 'AssertionError', message: 'actual failed, expected succeeded' },
+      tool: { ordinal: 9, tool: 'missher_project_ops_task_run', callId: 'profile-probe-9', isError: null,
+        error: { name: 'AssertionError', message: 'actual failed, expected succeeded' } },
+      receipt: { outcome: 'failed', exitCode: 1, executionMode: 'foreground', executorTool: 'bash', jobId: null, nestedCallId: 'call-9' },
+      native: { callId: 'native-9', parentCallId: 'profile-probe-9', kind: 'completed', exitCode: 1, signal: null,
+        timedOut: false, aborted: null, sandbox: { denied: false, runnerFailed: null }, stderr: 'verify failed', stdout: null },
+      value: null,
+      nestedContent: ['verify script exited 1'],
+      dispatch: null,
+    },
+  }))
+  const { facts } = drive(directory, 'probe-installed', 'process.exit(1)')
+  const document = uploadDocument({ passed: false, phase: 'probe-installed',
+    evidence: fixtureEvidenceFor(directory, 'probe-installed'), facts, original: 'node failed' })
+  expect(document.installed.businessFailure.stage).toBe('config-change-baseline')
+  expect(document.installed.businessFailure.tool.ordinal).toBe(9)
+  expect(document.installed.businessFailure.tool.callId).toBe('profile-probe-9')
+  expect(document.installed.businessFailure.receipt).toMatchObject({ outcome: 'failed', exitCode: 1, executorTool: 'bash' })
+  expect(document.installed.businessFailure.native).toMatchObject({ callId: 'native-9', exitCode: 1, stderr: 'verify failed' })
+  expect(document.installed.businessFailure.nestedContent).toEqual(['verify script exited 1'])
+  // The earlier expected rejection cannot appear as this failure's context, and
+  // the cleanup problem stays in its own field.
+  expect(JSON.stringify(document.installed.businessFailure)).not.toContain('native-policy-denied')
+  expect(document.cleanupErrors).toEqual(['dispose agent handle: already disposed'])
+  expect(document.firstError.message.startsWith('fixture:')).toBe(true)
+  // A second projection of the same summary is stable.
+  expect(document.installed.businessFailure).toEqual(fixtureEvidenceFor(directory, 'probe-installed').summary.businessFailure)
+})
+
+test('a failure without a related native call reports null rather than an older launch', () => {
+  const directory = runRoot()
+  writeFileSync(join(directory, 'installed.json'), JSON.stringify({
+    passed: false,
+    businessFailure: { stage: 'source-change-baseline', error: { name: 'AssertionError', message: 'expected passed' },
+      tool: null, receipt: null, native: null, value: null, nestedContent: null, dispatch: null },
+  }))
+  const { facts } = drive(directory, 'probe-installed', 'process.exit(1)')
+  const document = uploadDocument({ passed: false, phase: 'probe-installed',
+    evidence: fixtureEvidenceFor(directory, 'probe-installed'), facts, original: 'node failed' })
+  expect(document.installed.businessFailure.stage).toBe('source-change-baseline')
+  expect(document.installed.businessFailure.tool).toBeNull()
+  expect(document.installed.businessFailure.receipt).toBeNull()
+  expect(document.installed.businessFailure.native).toBeNull()
+  expect(document.installed.businessFailure.nestedContent).toBeNull()
+})
+
 test('the success and failure branches produce the same document shape', () => {
   const directory = runRoot()
   const { facts } = drive(directory, 'probe-removed', 'process.exit(0)')

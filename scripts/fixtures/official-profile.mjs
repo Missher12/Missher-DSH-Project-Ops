@@ -36,6 +36,7 @@ async function probe(ctx, config, signal, evidence) {
     return { passed: true, phase: 'removed', tools: [], guidance: false,
       runtime: { node: process.version, platform: process.platform, arch: process.arch } }
   }
+  evidence.setBusinessStage('activation')
   assert.equal(names.length, 9)
   assert(prompt.sections.some(section => section.name === 'missher-project-ops:agent-guidance'))
   const handles = []
@@ -51,9 +52,13 @@ async function probe(ctx, config, signal, evidence) {
   const shell = process.platform === 'win32' ? 'pwsh' : 'bash'
   const originalShell = ctx.tools.get(shell, owner)
   let afterNative = () => {}
+  // The tool call the native shell call was dispatched from; the evidence pair
+  // needs that relation, and a driver-side ordinal is not a substitute for it.
+  let enclosingToolCallId
   const nativeShell = { ...originalShell, async execute(args, exec) {
     const value = await evidence.observe('native', {
-      tool: shell, callId: exec.callId ?? 'unavailable', requestedWorkdir: args.workdir ?? 'unavailable',
+      tool: shell, callId: exec.callId ?? 'unavailable',
+      parentCallId: enclosingToolCallId ?? 'unavailable', requestedWorkdir: args.workdir ?? 'unavailable',
     }, () => originalShell.execute(args, exec))
     afterNative(value, exec)
     return value
@@ -61,11 +66,15 @@ async function probe(ctx, config, signal, evidence) {
   const removeNativeObserver = owner.ctx.tools.register(nativeShell)
   let sequence = 0
   const result = (name, args, agent = owner) => {
-    const callId = ToolCallId(`profile-probe-${++sequence}`)
-    return evidence.observe('tool', { tool: name, callId, taskId: args.taskId ?? 'unavailable',
+    // The ordinal is this fixture's own call counter, so a tool call can be
+    // named without borrowing any driver-side number.
+    const ordinal = ++sequence
+    const callId = ToolCallId(`profile-probe-${ordinal}`)
+    enclosingToolCallId = callId
+    return evidence.observe('tool', { tool: name, callId, ordinal, taskId: args.taskId ?? 'unavailable',
       requestedWorkdir: args.workdir ?? 'unavailable' }, () => ctx.agents.withInitiator(agent, () => ctx.tools.execute({
       name, arguments: args, agent, callId, signal,
-    })))
+    }))).finally(() => { enclosingToolCallId = undefined })
   }
   const call = async (name, args, agent = owner) => {
     const response = await result(name, args, agent)
@@ -84,11 +93,13 @@ async function probe(ctx, config, signal, evidence) {
     const doctor = await call('missher_project_ops_doctor', {})
     assert.equal(doctor.sourceSnapshot, true)
     assert.equal(doctor.foreground, true)
+    evidence.setBusinessStage('task-planning')
     const planArgs = { changedFiles: ['packages/app/input.js'], goal: 'verify' }
     const plan = await call('missher_project_ops_task_plan', planArgs)
     const task = plan.tasks.find(row => row.id === 'package@packages/app:verify')
     assert(task)
     const runArgs = { taskId: task.id, manifestDigest: task.manifestDigest }
+    evidence.setBusinessStage('declared-workspace-execution')
     let ran = await call('missher_project_ops_task_run', runArgs)
     if (ran.receipt.outcome === 'running') {
       outstanding.add(ran.receipt.jobId)
@@ -103,6 +114,7 @@ async function probe(ctx, config, signal, evidence) {
     const gateArgs = { ...planArgs, planDigest: plan.planDigest, receipts: [ran.receipt] }
     assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'passed')
     checks.push('declared-workspace-execution', 'verification-passed')
+    evidence.setBusinessStage('development-ready-real-file')
     const delivery = await call('missher_project_ops_document_write', { action: 'finish', taskId: development.taskId, expectedRevision: development.revision, verification: gateArgs, data: { implementation: 'Profile writes PLAN and READY', checks: [{ criterion: 'files on disk', status: 'reported-pass', evidence: 'Node filesystem read-back in isolated workspace' }], artifacts: [development.planPath], git: 'not committed', release: 'not released', installation: 'isolated profile only', limitations: ['No real model or native Desktop'], rollback: 'remove isolated profile' } })
     assert(delivery.readyValid)
     assert(delivery.verification.includes('passed'))
@@ -113,6 +125,7 @@ async function probe(ctx, config, signal, evidence) {
     // Wrap the already-visible official shell definition in this Agent's scope; execute its real body.
     const message = createUserMessage({ content: [{ type: 'text', text: 'Profile fixture context.' }],
       source: { kind: 'plugin', plugin: name } })
+    evidence.setBusinessStage('nested-context-and-conclusion')
     afterNative = (_value, exec) => { exec.deferContext(message); exec.concludeTurn() }
     const forwarded = await result('missher_project_ops_task_run', runArgs)
     afterNative = () => {}
@@ -136,6 +149,7 @@ async function probe(ctx, config, signal, evidence) {
     assert(existsSync(verifyMarker))
     rmSync(verifyMarker, { force: true })
     assert(!existsSync(verifyMarker))
+    evidence.setBusinessStage('native-policy-denied')
     const reject = owner.ctx.on('tools/pre-execute', (exec, next) => exec.name === shell
       ? { kind: 'deny', reason: 'Profile fixture denies the next native shell call.' } : next())
     const denied = await call('missher_project_ops_task_run', runArgs)
@@ -145,6 +159,7 @@ async function probe(ctx, config, signal, evidence) {
     assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'stale')
     checks.push('native-policy-denied', 'denied-call-produced-no-side-effect', 'old-success-cannot-hide-new-failure')
 
+    evidence.setBusinessStage('background-wait')
     const listed = await call('missher_project_ops_task_list', {})
     const long = listed.tasks.find(task => task.name === 'long')
     const running = await call('missher_project_ops_task_run', {
@@ -176,6 +191,7 @@ async function probe(ctx, config, signal, evidence) {
     outstanding.delete(receipt.jobId)
     checks.push('background-wait', 'foreign-owner-denied', 'native-cancel-settled-and-heartbeat-stopped')
 
+    evidence.setBusinessStage('foreground-promotion-retains-native-job')
     let timeoutResult
     afterNative = value => { timeoutResult = value }
     // Explicit foreground: promotion must come from the Host's own foreground
@@ -216,6 +232,7 @@ async function probe(ctx, config, signal, evidence) {
     // The plan is re-read here: writing PLAN/READY already changed the source
     // tree, so the first plan's digest would fail the baseline gate for a reason
     // that has nothing to do with the edit under test.
+    evidence.setBusinessStage('source-change-baseline')
     const sourcePlan = await call('missher_project_ops_task_plan', planArgs)
     const sourceTask = sourcePlan.tasks.find(row => row.id === task.id)
     assert(sourceTask !== undefined, 'the verify task is missing from the re-read plan before the source-change baseline')
@@ -233,6 +250,7 @@ async function probe(ctx, config, signal, evidence) {
     // (2) configuration invalidation: restore the source, re-plan and re-run to a
     // new fresh receipt first — the previous one is already stale by now.
     writeFileSync(join(config.workspace, 'packages/app/input.js'), 'export const changed = false\n')
+    evidence.setBusinessStage('config-change-baseline')
     const replanned = await call('missher_project_ops_task_plan', planArgs)
     const replannedTask = replanned.tasks.find(row => row.id === task.id)
     assert(replannedTask !== undefined, 'the verify task is missing from the re-read plan before the config-change baseline')
@@ -256,6 +274,10 @@ async function probe(ctx, config, signal, evidence) {
       modelProjection: { contexts: forwarded.additionalContexts.map(row => ({ role: row.role, source: row.source, content: row.content })),
         concludesTurn: forwarded.concludesTurn, outcome: forwardedOutcome } }
   } catch (error) {
+    // Freeze first: cleanup runs in `finally` and may produce activity of its
+    // own, and an expected deny/rejection earlier in the run must not be read as
+    // this failure's context.
+    evidence.freezeBusinessFailure(error)
     evidence.recordError('check-error', error)
     failure = error
   } finally {

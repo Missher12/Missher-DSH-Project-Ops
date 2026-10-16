@@ -37,6 +37,16 @@ const ctx = {
       else {
         const returned = await native.execute({ workdir: dirname(report) }, { callId: 'synthetic-native-call' })
         value = { receipt: { outcome: 'failed', exitCode: returned.exitCode } }
+        // `nested` mode: the product's real shell/Jobs error text lives in
+        // value.nestedContent. Two blocks are kept and capped; the third block and
+        // any credential or machine path inside them must not survive the upload.
+        if (process.argv[3] === 'nested') {
+          value.nestedContent = [
+            { type: 'text', text: `shell failed at /home/fixture-user/projects/fixture-project/private/out.log\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload` },
+            { type: 'text', text: 'second bounded block' },
+            { type: 'text', text: 'third block must be dropped' },
+          ]
+        }
       }
       return { isError: false, value, content: [] }
     },

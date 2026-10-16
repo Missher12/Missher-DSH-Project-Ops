@@ -19,12 +19,10 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
-  symlinkSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { lockedHostDependencies } from './host-dependencies.mjs'
 import { ALLOWED_ENTRY, REQUIRED_ENTRIES, assertArchiveEntries } from './package-inspection.mjs'
 import { SOURCE, archiveIdentity, createHostResolver, installedPathFor } from './selected-host.mjs'
 
@@ -188,16 +186,6 @@ try {
       === createHash('sha256').update(readFileSync(packedEntry)).digest('hex'),
     'installed entry bytes differ from the packed entry',
   )
-  // Supply host peers to the installed Bundle from the pinned validation runtime.
-  const installedPackage = dirname(dirname(installedEntry))
-  if (hostRoot) {
-    // Install declared host peers in the isolated Profile, with no developer dependency links.
-    const peers = lockedHostDependencies(pluginRoot)
-    run(npmCommand, ['install', '--legacy-peer-deps', '--ignore-scripts', '--no-audit', '--no-fund', ...peers], { cwd: profileDir, env: isolatedEnv, shell: process.platform === 'win32' })
-  } else if (!existsSync(join(installedPackage, 'node_modules'))) {
-    symlinkSync(join(pluginRoot, 'node_modules'), join(installedPackage, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
-  }
-
   // Mandatory real-Profile verification of THIS archive. The profile script
   // receives the archive and its digest, so it re-checks the same bytes instead
   // of packing its own, and it drives the same selected Host root. A non-zero

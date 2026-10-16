@@ -26,6 +26,57 @@ const LOCATIONS = [
   '/tmp/folder with spaces/installed.json',
 ]
 
+test('the frozen business snapshot survives a second projection, sanitised and whitelisted', () => {
+  const source = {
+    passed: false,
+    businessFailure: {
+      stage: 'declared-workspace-execution',
+      error: { name: 'AssertionError', message: 'failed at /home/fixture-user/projects/fixture-project/x' },
+      tool: { ordinal: 3, tool: 'missher_project_ops_task_run', callId: 'profile-probe-3', isError: null,
+        error: { name: 'AssertionError', message: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload' } },
+      receipt: { outcome: 'failed', exitCode: 1, executionMode: 'foreground', executorTool: 'pwsh', jobId: 'bash-3',
+        nestedCallId: 'call-3', stderr: 'must not appear on a receipt' },
+      native: { callId: 'native-3', parentCallId: 'profile-probe-3', kind: 'completed', exitCode: 1, signal: null,
+        timedOut: false, aborted: null, sandbox: { denied: false, runnerFailed: null },
+        stderr: 'C:\\Users\\fixture\\out.log', stdout: null },
+      value: null,
+      nestedContent: [`failed in /home/fixture-user/projects/fixture-project/out.log`, 'x'.repeat(400)],
+      dispatch: { ordinal: 2, callId: 'call-2', receipt: { outcome: 'running', jobId: 'bash-3', nestedCallId: 'call-3', extra: 'dropped' } },
+      unknownField: 'must not survive',
+    },
+  }
+  const once = diagnosticProjection(source)
+  const twice = diagnosticProjection(once)
+  // Idempotent: the driver projects the fixture summary, the upload projects again.
+  expect(twice).toEqual(once)
+  const document = ciDiagnosticDocument({ passed: false, installed: once })
+  // The snapshot is attributed to the phase it belongs to, not duplicated at the
+  // top level, so the upload document has exactly one copy of it.
+  expect('businessFailure' in document).toBe(false)
+  const frozen = document.installed.businessFailure
+  expect(frozen.stage).toBe('declared-workspace-execution')
+  // The error whitelist emits all four of its keys, so an absent `code` is an
+  // explicit null rather than a missing property.
+  expect(frozen.tool).toEqual({ ordinal: 3, tool: 'missher_project_ops_task_run', callId: 'profile-probe-3', isError: null,
+    error: { name: 'AssertionError', message: '[redacted]', code: null, infoCode: null } })
+  // Each nested object keeps only its own short key list.
+  expect(Object.keys(frozen.receipt).sort()).toEqual(['executionMode', 'executorTool', 'exitCode', 'jobId', 'nestedCallId', 'outcome'])
+  expect(frozen.native.stderr).toBe('[path]')
+  expect(JSON.stringify(frozen)).not.toContain('must not appear on a receipt')
+  expect(JSON.stringify(document)).not.toContain('unknownField')
+  // Bounded text: at most two blocks, each scrubbed and capped.
+  expect(frozen.nestedContent).toHaveLength(2)
+  expect(frozen.nestedContent[0]).toBe('failed in [path]')
+  expect(frozen.nestedContent[1].length).toBeLessThanOrEqual(240)
+  expect(JSON.stringify(document)).not.toContain('/home/fixture-user')
+  expect(JSON.stringify(document)).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')
+  expect(JSON.stringify(document)).not.toContain('C:\\Users')
+  // The dispatch pair survives both projections with its own receipt keys.
+  expect(frozen.dispatch).toMatchObject({ ordinal: 2, callId: 'call-2' })
+  expect(frozen.dispatch.receipt).toEqual({ outcome: 'running', exitCode: null, executionMode: null, executorTool: null,
+    jobId: 'bash-3', nestedCallId: 'call-3' })
+})
+
 test('every credential shape and machine location is neutralised in the upload', () => {
   const document = ciDiagnosticDocument({
     passed: false,

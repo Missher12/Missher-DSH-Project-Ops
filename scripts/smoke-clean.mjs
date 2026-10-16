@@ -49,7 +49,10 @@ try {
   const dependencies = lockedHostDependencies(root)
   console.log('clean-install: installing pinned Harness runtime without developer node_modules links')
   // Harness peers are explicitly pinned above; avoid npm expanding the cyclic host peer graph.
-  run(npm, ['install', '--legacy-peer-deps', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', ...dependencies], harness)
+  // --save-exact keeps the freshly created Harness profile's direct specs exact:
+  // a command line that names exact versions does not by itself prove the saved
+  // spec is exact. Test-environment only; no product manifest or lock is touched.
+  run(npm, ['install', '--save-exact', '--legacy-peer-deps', '--prefer-offline', '--ignore-scripts', '--no-audit', '--no-fund', ...dependencies], harness)
   process.stdout.write(run(process.execPath, [join(root, 'scripts/smoke.mjs')], root, { ...process.env, PROJECT_OPS_HOST_ROOT: harness }))
   assertPackageName(packageName)
   console.log(`clean-runtime: PASS ${process.platform}/${process.arch}, Node ${process.version}; ${packageName} installs and removes in isolation`)
