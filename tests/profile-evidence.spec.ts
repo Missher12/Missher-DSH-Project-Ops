@@ -86,8 +86,10 @@ test('the frozen business context reaches the final upload, not just the attempt
   // A second projection of the same object is stable: the driver projects once
   // and the upload document projects again.
   expect(document.installed.businessFailure).toEqual(fixtureEvidenceFor(uploadDir, 'probe-installed').summary.businessFailure)
-  // On a non-Windows platform the diagnostic is reported as skipped and never
-  // called at all.
+  // The synthetic child of this `nested` mode declares linux as its own test
+  // platform (see tests/fixtures/profile-evidence-failure.mjs), so this case is an
+  // explicit non-Windows scenario on any CI host: the diagnostic is reported as
+  // skipped and never called at all.
   expect(fixture.startupDiagnostic.result).toBe('skipped-not-windows')
   expect(fixture.startupDiagnostic.attempted).toBe(false)
   expect(existsSync(join(directory, 'nested-installed.json.diag-calls.json'))).toBe(false)

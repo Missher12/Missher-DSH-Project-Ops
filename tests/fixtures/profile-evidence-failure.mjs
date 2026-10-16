@@ -5,12 +5,16 @@ import { basename, dirname, join } from 'node:path'
 import { apply } from '../../scripts/fixtures/official-profile.mjs'
 
 const report = process.argv[2]
-// Test-only knobs. `win-diag*` modes make this synthetic child behave as if it ran
-// on win32 so the fixture's Windows diagnostic path is reachable on Linux; the
-// product and the fixture carry no platform switch of their own.
+// Test-only knobs. This synthetic child always declares its own platform instead
+// of inheriting the machine it runs on: `win-diag*` modes behave as win32 so the
+// fixture's Windows diagnostic path is reachable anywhere, and every other mode
+// behaves as linux so the non-Windows skip path stays deterministic on a Windows
+// CI host as well. This is the fixture's synthesized test platform only — neither
+// the product nor the fixture carries a platform switch, and a real Host is never
+// affected.
 const mode = process.argv[3] ?? ''
 const winMode = mode.startsWith('win-diag')
-if (winMode) Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+Object.defineProperty(process, 'platform', { value: winMode ? 'win32' : 'linux', configurable: true })
 const calls = { diagnostic: [], jobs: [] }
 const callsPath = join(dirname(report), `${basename(report)}.diag-calls.json`)
 const flush = () => { try { writeFileSync(callsPath, JSON.stringify(calls, null, 2)) } catch { /* evidence only */ } }
