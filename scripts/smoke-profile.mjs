@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, cpSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, cpSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inspectArchive } from './package-inspection.mjs'
 import { createHostResolver, describeHost } from './selected-host.mjs'
+import { failureDetail, fixtureEvidenceFor, runDriverCommand, uploadDocument } from './fixtures/driver-diagnostics.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRoot = process.env.PROJECT_OPS_HOST_ROOT ? resolve(process.env.PROJECT_OPS_HOST_ROOT) : undefined
@@ -21,6 +22,9 @@ const nodeBinary = process.env.PROJECT_OPS_NODE ? resolve(process.env.PROJECT_OP
 const overlay = process.env.PROJECT_OPS_EXTRA_PATCH ? resolve(process.env.PROJECT_OPS_EXTRA_PATCH) : undefined
 assert(existsSync(nodeBinary), 'selected Node executable is missing')
 if (overlay) assert(existsSync(overlay), 'selected composition patch is missing')
+// CI uploads this directory only: allowlisted fields, capped strings, scrubbed
+// credentials and local paths. The full local evidence stays in evidenceRoot.
+const ciEvidence = join(root, '.artifacts/ci-diagnostics')
 const evidenceRoot = join(root, '.artifacts/official-compat')
 mkdirSync(evidenceRoot, { recursive: true })
 const directory = mkdtempSync(join(evidenceRoot, 'profile-'))
@@ -34,23 +38,37 @@ Object.assign(env, { HOME: home, DSH_HOME: dshHome, DSH_TELEMETRY_DISABLED: '1',
 const liveHome = join(homedir(), '.dsh')
 const sentinel = () => existsSync(liveHome) ? createHash('sha256').update(JSON.stringify(readdirSync(liveHome).sort())).digest('hex') : 'absent'
 const before = sentinel()
+/** Current stage of the run; the failure record names it instead of leaving the step implicit. */
+let phase = 'startup'
+const setPhase = name => { phase = name }
+/** Facts of the last driver command, kept for the failure record. */
+let lastFacts = null
+let ordinal = 0
+
+/** Run one driver command through the shared chain: facts are recorded before any assertion. */
 function run(command, args, cwd = workspace) {
-  const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 180000,
+  const { result, facts } = runDriverCommand({ command, args, cwd, env, directory, phase, ordinal: ordinal++,
     shell: command.endsWith('.cmd') })
-  const ordinal = run.count++
-  writeFileSync(join(directory, `command-${ordinal}.log`), `${result.stdout ?? ''}\n${result.stderr ?? ''}`, { flag: 'wx' })
-  writeFileSync(join(directory, `command-${ordinal}.json`), JSON.stringify({ executable: command, args, cwd,
-    processExitCode: result.status, processSignal: result.signal, timedOut: 'unavailable',
-    error: result.error ? { message: result.error.message, code: result.error.code ?? 'unavailable' } : 'unavailable',
-    note: 'These are driver subprocess facts, not the declared task exit code or signal.' }, null, 2) + '\n', { flag: 'wx' })
-  if (result.error || result.status !== 0) throw new Error(`${command} failed (${result.status}): ${result.error?.message ?? ''}\n${result.stderr}\n${result.stdout}`)
+  lastFacts = facts
+  if (result.error !== undefined || result.status !== 0) {
+    // Null-safe: a CLI that produced no fixture report still reports its own exit
+    // status instead of dereferencing a missing summary.
+    const evidence = fixtureEvidenceFor(directory, phase)
+    const output = `${result.stderr ?? ''}\n${result.stdout ?? ''}`.trim()
+    throw new Error(failureDetail({ evidence, facts, fallback: `${command} failed`, output }))
+  }
   return result.stdout
 }
 run.count = 0
 const dsh = args => run(nodeBinary, [cli, ...args])
 const profile = 'project-ops-official-test'
 const profileDir = join(dshHome, 'profiles', profile)
+/** Filled as soon as the archive is inspected; stays null when the run fails earlier. */
+let inspectedIdentity = null
 try {
+  // A run that dies before writing must not leave the previous run's projection
+  // behind: CI uploads whatever is there, and a stale success would misreport it.
+  rmSync(join(ciEvidence, 'smoke-profile.json'), { force: true })
   let archive
   if (process.env.PROJECT_OPS_ARCHIVE) {
     assert(process.env.PROJECT_OPS_ARCHIVE_SHA256, 'a fixed archive requires PROJECT_OPS_ARCHIVE_SHA256')
@@ -62,15 +80,18 @@ try {
   }
   const inspected = inspectArchive(archive, process.env.PROJECT_OPS_ARCHIVE_SHA256)
   const archiveSha256 = inspected.sha256
+  inspectedIdentity = { name: inspected.manifest.name, version: inspected.manifest.version, sha256: inspected.sha256, bytes: inspected.bytes }
   const hostEvidence = { host: describeHost(host), cli, cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),
     selectedNode: nodeBinary, archive, archiveSha256,
     extraPatch: overlay ? { path: overlay, sha256: createHash('sha256').update(readFileSync(overlay)).digest('hex') } : null }
   writeFileSync(join(directory, 'selected-runtime.json'), JSON.stringify(hostEvidence, null, 2) + '\n', { flag: 'wx' })
   // Initialize a named Profile from the official headless template without launching a second application entry.
+  setPhase('initialize-profile')
   dsh(['--profile', profile, '--from-default-profile', 'headless', '--dump-config'])
+  setPhase('install-archive')
   dsh(['plugin', '--profile', profile, 'add', archive])
   const installed = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))
-  assert(installed.dsh.profile.bundles.includes('@missher/dsh-project-ops'))
+  assert(installed.dsh.profile.bundles.includes(inspectedIdentity.name))
   const app = join(workspace, 'packages/app')
   mkdirSync(app, { recursive: true })
   writeFileSync(join(workspace, 'package.json'), JSON.stringify({ private: true, packageManager: 'npm@10', workspaces: ['packages/*'] }))
@@ -94,13 +115,17 @@ try {
     writeFileSync(patch, JSON.stringify(rows, null, 2) + '\n')
   }
   configure(false)
+  setPhase('probe-installed')
   console.log('official-profile: booting installed plugin through dsh')
   dsh(['--profile', profile, ...overlay ? ['--patch', overlay] : []])
   const actual = JSON.parse(readFileSync(join(directory, 'installed.json'), 'utf8'))
   assert.equal(actual.passed, true)
   assert.deepEqual(actual.modelProjection, JSON.parse(readFileSync(join(root, 'tests/fixtures/official-profile.expected.json'), 'utf8')))
-  dsh(['plugin', '--profile', profile, 'remove', '@missher/dsh-project-ops'])
+  // The removal names the package the archive manifest declares, not a constant.
+  setPhase('remove-plugin')
+  dsh(['plugin', '--profile', profile, 'remove', inspected.manifest.name])
   configure(true)
+  setPhase('probe-removed')
   console.log('official-profile: checking tool and prompt absence after CLI removal')
   dsh(['--profile', profile, ...overlay ? ['--patch', overlay] : []])
   const removed = JSON.parse(readFileSync(join(directory, 'removed.json'), 'utf8'))
@@ -115,9 +140,9 @@ try {
     referenceSource: referenceSha === null
       ? 'null: no verified commit id for this target in this run'
       : 'caller-supplied verified reference via PROJECT_OPS_HOST_REFERENCE_SHA',
-    runtimeSource: host.installation.source === 'custom'
-      ? 'Explicit caller-supplied runtime; package version is not source-SHA attestation'
-      : `${host.installation.source} packaging selected by its own root; package version is not source-SHA attestation`,
+    runtimeSource: host.installation.source.kind === 'checkout'
+      ? 'Checkout install selected by default; package version is not source-SHA attestation'
+      : `Caller-selected runtime (${host.installation.source.label}); a label is not a distribution proof, and the package version is not source-SHA attestation`,
     hostRoot: hostRoot ?? null, hostInstallation: host.installation, nodeBinary, cli,
     extraPatch: overlay ? { path: overlay, sha256: createHash('sha256').update(readFileSync(overlay)).digest('hex') } : null,
     cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),
@@ -127,8 +152,50 @@ try {
     installed: actual, removed, liveHomeSentinelUnchanged: true,
     limitations: ['No live model API or Desktop UI', 'OS/architecture results apply only to this run', 'Headless-derived host smoke does not replace final Electron/platform acceptance'] }
   writeFileSync(join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' })
-  console.log(JSON.stringify({ passed: true, evidence: join(directory, 'report.json'), archiveSha256 }))
+  mkdirSync(ciEvidence, { recursive: true })
+  // Replace, never append with `wx`: the same checkout can run this repeatedly,
+  // and this file only ever holds the current run's minimal projection. The
+  // complete raw evidence stays in the per-attempt mkdtemp directories.
+  writeFileSync(join(ciEvidence, 'smoke-profile.json'), JSON.stringify(uploadDocument({
+    passed: true,
+    phase,
+    platform: { node: process.version, os: process.platform, arch: process.arch },
+    selectedRuntime: { source: host.installation.source, sdkVersion: dshManifest.version, archive: inspectedIdentity },
+    evidence: fixtureEvidenceFor(directory, phase),
+    facts: lastFacts,
+    original: null,
+    installed: actual,
+    removed,
+  }), null, 2) + '\n')
+  console.log(JSON.stringify({ passed: true, evidence: join(directory, 'report.json'), ciEvidence, archiveSha256 }))
 } catch (error) {
-  writeFileSync(join(directory, 'failure.json'), JSON.stringify({ passed: false, error: String(error.stack ?? error) }, null, 2) + '\n', { flag: 'wx' })
+  // The original failure is the record. Diagnostic and cleanup problems are
+  // recorded beside it and never replace it.
+  const original = String(error.stack ?? error)
+  const evidence = fixtureEvidenceFor(directory, phase)
+  // The generated patch layer is kept on purpose: it is the reproduction input
+  // for the failure. Cleanup problems are recorded, never rethrown over this error.
+  const cleanupError = evidence.summary?.cleanupError ?? null
+  const failure = { passed: false, phase, error: original,
+    fixtureEvidence: evidence.relativePath ?? evidence.note,
+    fixtureSummary: evidence.summary ?? null,
+    driver: lastFacts,
+    cleanupError }
+  try {
+    writeFileSync(join(directory, 'failure.json'), JSON.stringify(failure, null, 2) + '\n', { flag: 'wx' })
+  } catch { /* the thrown error below stays the primary signal */ }
+  try {
+    mkdirSync(ciEvidence, { recursive: true })
+    writeFileSync(join(ciEvidence, 'smoke-profile.json'), JSON.stringify(uploadDocument({
+      passed: false,
+      phase,
+      platform: { node: process.version, os: process.platform, arch: process.arch },
+      selectedRuntime: { source: host.installation.source, sdkVersion: dshManifest.version, archive: inspectedIdentity },
+      evidence,
+      facts: lastFacts,
+      original,
+      cleanupError,
+    }), null, 2) + '\n')
+  } catch { /* evidence upload is best effort; the failure above still stands */ }
   throw error
 }

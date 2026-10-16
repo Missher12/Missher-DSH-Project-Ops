@@ -4,7 +4,14 @@ import { readFile, readdir, lstat, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from 'cordis'
-import * as ProjectOps from 'dsh-project-ops/cordis'
+
+// The driver passes the package name it verified from the archive manifest, so
+// this fixture never hardcodes (or guesses) a package name or scope.
+const packageName = process.env.PROJECT_OPS_PACKAGE_NAME
+if (typeof packageName !== 'string' || !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(packageName)) {
+  throw new Error('PROJECT_OPS_PACKAGE_NAME must be set to the verified archive package name')
+}
+const ProjectOps = await import(`${packageName}/cordis`)
 
 const workspace = process.argv[2]
 const run = promisify(execFile)

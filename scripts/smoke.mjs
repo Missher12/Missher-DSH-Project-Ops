@@ -1,3 +1,14 @@
+/**
+ * Package verification: the archive, and the mandatory Profile run of it.
+ *
+ * This script owns the packaging half — which bytes ship, under which identity,
+ * and whether a real Profile installs, composes, records and removes that exact
+ * archive. It no longer builds a second hand-made Context runtime: behaviour is
+ * verified by the real Profile entry (`scripts/smoke-profile.mjs`), which this
+ * script runs as a required child against the same archive bytes and the same
+ * selected Host root. A non-zero child fails the package check; there is no
+ * report-present shortcut.
+ */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -9,20 +20,32 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { createRequire } from 'node:module'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { lockedHostDependencies } from './host-dependencies.mjs'
 import { ALLOWED_ENTRY, REQUIRED_ENTRIES, assertArchiveEntries } from './package-inspection.mjs'
+import { SOURCE, archiveIdentity, createHostResolver, installedPathFor } from './selected-host.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const hostRoot = process.env.PROJECT_OPS_HOST_ROOT
-const require = createRequire(hostRoot ? join(hostRoot, 'package.json') : import.meta.url)
-const dshPackageRoot = dirname(require.resolve('@deepseek-ai/dsh/package.json'))
+const hostRoot = process.env.PROJECT_OPS_HOST_ROOT ? resolve(process.env.PROJECT_OPS_HOST_ROOT) : undefined
+/**
+ * Resolve the selected Host's own installed SDK.
+ *
+ * The SDK must come from the selected root's own `node_modules/@deepseek-ai/dsh`
+ * link, for the checkout default as well as for an explicit Host: a plain
+ * `createRequire(hostRoot/package.json)` would walk up the directory tree and
+ * borrow an SDK from an unrelated ancestor, letting an empty Host pass.
+ */
+const selectedHost = createHostResolver(hostRoot ?? pluginRoot,
+  { sourceKind: hostRoot === undefined ? SOURCE.checkout : SOURCE.caller })
+const dshPackageRoot = dirname(selectedHost.resolvePackage('@deepseek-ai/dsh').manifestPath)
 const dshCli = join(dshPackageRoot, 'lib', 'bin.js')
+// The selected Host reports its own version: a printed constant would go stale
+// the moment the harness line moves.
+const dshVersion = JSON.parse(readFileSync(join(dshPackageRoot, 'package.json'), 'utf8')).version
+const sourceVersion = JSON.parse(readFileSync(join(pluginRoot, 'package.json'), 'utf8')).version
 /**
  * One whitelist for the whole repository: the required entries and the allowed
  * entry pattern come from `package-inspection.mjs`, so this smoke check cannot
@@ -54,6 +77,10 @@ function run(command, args, options = {}) {
     env: options.env ?? process.env,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
+    // The mandatory Profile child boots a real Host and installs a Profile, so a
+    // caller that names an archive gets the same generous window the standalone
+    // profile script uses.
+    timeout: options.env?.PROJECT_OPS_ARCHIVE === undefined ? undefined : 30 * 60 * 1000,
     shell: options.shell ?? false,
   })
   if (result.error !== undefined) throw result.error
@@ -74,94 +101,6 @@ function directorySentinel(path) {
 
 function readProfileManifest(home, profile) {
   return JSON.parse(readFileSync(join(home, 'profiles', profile, 'package.json'), 'utf8'))
-}
-
-async function exercisePackedPlugin(entry, workspace, home) {
-  const cliRequire = createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
-  const baseRequire = createRequire(cliRequire.resolve('@deepseek-ai/dsh-base/package.json'))
-  const bashRequire = createRequire(baseRequire.resolve('@deepseek-ai/dsh-bash-sandbox'))
-  const load = async (name, resolver = require) => import(pathToFileURL(resolver.resolve(name)).href)
-  const { Context } = await load('@deepseek-ai/cordis')
-  const ctx = new Context()
-  const fibers = []
-  const mount = async (module, config = {}) => fibers.push(await ctx.plugin(module.default ?? module, config))
-  try {
-    await mount(await load('@deepseek-ai/dsh-agent'))
-    await mount(await load('@deepseek-ai/dsh-jobs-local'))
-    await mount(await load('@deepseek-ai/dsh-system-prompt'))
-    await mount(await load('@deepseek-ai/dsh-tools'))
-    await mount(await load('@deepseek-ai/dsh-fs-local'), { cwd: workspace, diffBasisMaxBytes: 1048576 })
-    await mount(await load('@deepseek-ai/dsh-subprocess-local', baseRequire))
-    await mount(await load('@deepseek-ai/dsh-shell-env', baseRequire), { dshHome: home })
-    await mount(await load(process.platform === 'win32' ? '@deepseek-ai/dsh-pwsh-local' : '@deepseek-ai/dsh-bash-local', process.platform === 'win32' ? cliRequire : bashRequire), {
-      cwd: workspace, timeoutMs: 1000, maxTimeoutMs: 2000, graceMs: 100,
-    })
-    await mount(await load(process.platform === 'win32' ? '@deepseek-ai/dsh-tool-pwsh' : '@deepseek-ai/dsh-tool-bash', cliRequire))
-    await mount(await load('@deepseek-ai/dsh-tool-jobs', cliRequire), { completionDelivery: 'quiet' })
-    await mount(await import(pathToFileURL(entry).href), { snapshotOutputDirectories: ['packages/app/.project-ops-output'] })
-    const promptService = ctx.get('systemPrompt')
-    invariant(promptService !== undefined, 'native systemPrompt service is missing')
-    const prompt = await promptService.assemble()
-    invariant(prompt.sections.some(section => section.name === 'missher-project-ops:agent-guidance'), 'Project Ops Agent guidance was not registered in systemPrompt')
-    const owner = { id: 'smoke-owner', ctx, session: { id: 'smoke-owner', header: { id: 'smoke-owner', cwd: workspace } }, inject() {} }
-    const stranger = { ...owner, id: 'smoke-stranger', session: { id: 'smoke-stranger', header: { id: 'smoke-stranger', cwd: workspace } } }
-    ctx.agents.register(owner)
-    ctx.agents.register(stranger)
-    let sequence = 0
-    const call = async (name, args, agent = owner) => {
-      const result = await ctx.tools.execute({ name, arguments: args, agent, callId: `smoke-${++sequence}`, signal: new AbortController().signal })
-      invariant(!result.isError, `native ${name} failed: ${JSON.stringify(result.content)}`)
-      return result.value
-    }
-    const planned = await call('missher_project_ops_task_plan', { changedFiles: ['packages/app/src/index.js'], goal: 'verify' })
-    const task = planned.tasks.find(row => row.id === 'package@packages/app:verify')
-    invariant(task !== undefined, 'installed plugin did not plan workspace verification')
-    const ran = await call('missher_project_ops_task_run', { taskId: task.id, manifestDigest: task.manifestDigest, mode: 'auto', waitMs: 1000 })
-    const collect = receipt => call('missher_project_ops_task_collect', {
-      taskId: receipt.taskId, manifestDigest: receipt.manifestDigest, jobId: receipt.jobId,
-      nestedCallId: receipt.nestedCallId, startedAt: receipt.startedAt, waitMs: 10000,
-    })
-    const terminal = ran.receipt.outcome === 'running' ? await collect(ran.receipt) : ran
-    invariant(terminal.receipt.outcome === 'succeeded', 'native job did not succeed')
-    invariant(existsSync(join(workspace, 'packages/app/.project-ops-output/project-ops-smoke.marker')), 'workspace script did not execute')
-    const gate = await call('missher_project_ops_verification_gate', {
-      changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest,
-      receipts: [ran.receipt, terminal.receipt],
-    })
-    invariant(gate.verdict === 'passed', 'native verification gate did not pass')
-    const readiness = await call('missher_project_ops_doctor', {})
-    invariant(readiness.foreground && readiness.sourceSnapshot, 'native readiness failed')
-    writeFileSync(join(workspace, 'packages/app/src/index.js'), 'export const changed = true\n')
-    const sourceStale = await call('missher_project_ops_verification_gate', { changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest, receipts: [terminal.receipt] })
-    invariant(sourceStale.verdict === 'stale', 'source edit accepted old evidence')
-    writeFileSync(join(workspace, 'packages/app/src/index.js'), 'export {}\n')
-    const marker = join(workspace, 'packages/app/.project-ops-output/project-ops-smoke.marker')
-    rmSync(marker)
-    rmSync(join(workspace, 'packages/app/.project-ops-output'), { recursive: true })
-    const removeGuard = ctx.on('tools/pre-execute', async (exec, next) =>
-      exec.name === (process.platform === 'win32' ? 'pwsh' : 'bash') ? { kind: 'deny', reason: 'smoke policy denial' } : next())
-    const blocked = await call('missher_project_ops_task_run', { taskId: task.id, manifestDigest: task.manifestDigest })
-    invariant(blocked.receipt.outcome !== 'succeeded' && !existsSync(marker), 'native policy denial did not prevent dispatch')
-    removeGuard()
-    const listed = await call('missher_project_ops_task_list', {})
-    const long = listed.tasks.find(row => row.name === 'long')
-    const started = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest, mode: 'auto', waitMs: 1 })
-    invariant(started.receipt.outcome === 'running', 'bounded wait must leave native job running')
-    const denied = await ctx.tools.execute({ name: 'job_kill', arguments: { job_id: started.receipt.jobId }, agent: stranger, callId: 'stranger-kill', signal: new AbortController().signal })
-    invariant(denied.isError, 'native Jobs owner fence permitted stranger cancellation')
-    await call('job_kill', { job_id: started.receipt.jobId })
-    invariant((await collect(started.receipt)).receipt.outcome === 'aborted', 'native cancellation did not settle aborted')
-    const timed = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest, mode: 'foreground' })
-    invariant(timed.receipt.outcome !== 'succeeded', 'native timeout became success')
-    writeFileSync(join(workspace, '.npmrc'), 'ignore-scripts=true\n')
-    const stale = await call('missher_project_ops_verification_gate', {
-      changedFiles: ['packages/app/src/index.js'], goal: 'verify', planDigest: planned.planDigest, receipts: [terminal.receipt],
-    })
-    invariant(stale.verdict === 'stale', 'changed configuration accepted old receipt')
-    process.stdout.write(`native-runtime: PASS ${process.platform}/${process.arch}, Harness 0.1.5-rc.2, real Tools/Jobs/subprocess, policy denial, owner fence, wait, kill, timeout, stale config\n`)
-  } finally {
-    for (const fiber of fibers.reverse()) await fiber.dispose()
-  }
 }
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'dsh-project-ops-smoke-'))
@@ -199,6 +138,12 @@ try {
   }))
   invariant(Array.isArray(packed) && packed.length === 1, 'npm pack returned an unexpected manifest')
   const archive = join(packDir, packed[0].filename)
+  // One archive feeds everything below: identity, entry whitelist, install,
+  // Bundle activation, byte comparison and the mandatory Profile run.
+  const archiveSha256 = createHash('sha256').update(readFileSync(archive)).digest('hex')
+  const identity = archiveIdentity(run('tar', ['-xOf', archive, 'package/package.json']),
+    JSON.parse(readFileSync(join(pluginRoot, 'package.json'), 'utf8')).name)
+  const packageName = identity.name
   const entries = run('tar', ['-tzf', archive]).trim().split(/\r?\n/u).sort()
   // Required entries, duplicates, escaping paths and the allowed-name pattern is
   // one shared rule; this smoke check only adds the "exactly these files" part.
@@ -226,35 +171,17 @@ try {
 
   run(process.execPath, [...cli, 'plugin', '--profile', profile, 'add', archive], { env: isolatedEnv })
   const installed = readProfileManifest(temporaryHome, profile)
-  invariant(installed.dependencies?.['dsh-project-ops'] !== undefined, 'temporary Profile dependency was not installed')
-  invariant(installed.dsh?.profile?.bundles?.includes('dsh-project-ops'), 'temporary Profile Bundle layer was not activated')
+  invariant(installed.dependencies?.[packageName] !== undefined, `temporary Profile dependency ${packageName} was not installed`)
+  invariant(installed.dsh?.profile?.bundles?.includes(packageName), `temporary Profile Bundle layer ${packageName} was not activated`)
 
   const dumped = run(process.execPath, [...cli, '--profile', profile, '--dump-config'], { env: isolatedEnv })
   invariant(dumped.includes('missher-project-ops'), 'temporary Profile did not compose the plugin row')
 
-  const workspace = join(temporaryRoot, 'workspace')
   const runtimeRoot = join(temporaryRoot, 'runtime')
-  mkdirSync(workspace)
   mkdirSync(runtimeRoot)
   run('tar', ['-xzf', archive, '-C', runtimeRoot])
-  writeFileSync(join(workspace, 'package.json'), JSON.stringify({
-    name: 'project-ops-smoke-root',
-    private: true,
-    packageManager: 'npm@10.0.0',
-    workspaces: ['packages/*'],
-  }))
-  mkdirSync(join(workspace, 'packages', 'app', 'src'), { recursive: true })
-  writeFileSync(join(workspace, 'packages', 'app', 'src', 'index.js'), 'export {}\n')
-  writeFileSync(join(workspace, 'packages', 'app', 'package.json'), JSON.stringify({
-    name: '@smoke/app',
-    private: true,
-    scripts: {
-      long: 'node -e "setTimeout(() => {}, 60000)"',
-      verify: 'node -e "require(\'node:fs\').mkdirSync(\'.project-ops-output\', { recursive: true }); require(\'node:fs\').writeFileSync(\'.project-ops-output/project-ops-smoke.marker\', \'ran\')"',
-    },
-  }))
   const profileDir = join(temporaryHome, 'profiles', profile)
-  const installedEntry = join(profileDir, 'node_modules', 'dsh-project-ops', 'lib', 'index.js')
+  const installedEntry = join(installedPathFor(join(profileDir, 'node_modules'), packageName), 'lib', 'index.js')
   const packedEntry = join(runtimeRoot, 'package', 'lib', 'index.js')
   invariant(
     createHash('sha256').update(readFileSync(installedEntry)).digest('hex')
@@ -270,16 +197,30 @@ try {
   } else if (!existsSync(join(installedPackage, 'node_modules'))) {
     symlinkSync(join(pluginRoot, 'node_modules'), join(installedPackage, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
   }
-  await exercisePackedPlugin(installedEntry, workspace, temporaryHome)
 
-  run(process.execPath, [...cli, 'plugin', '--profile', profile, 'remove', 'dsh-project-ops'], { env: isolatedEnv })
+  // Mandatory real-Profile verification of THIS archive. The profile script
+  // receives the archive and its digest, so it re-checks the same bytes instead
+  // of packing its own, and it drives the same selected Host root. A non-zero
+  // child throws out of `run`, which fails the package check: the report alone
+  // never counts as a pass.
+  run(process.execPath, [join(pluginRoot, 'scripts', 'smoke-profile.mjs')], {
+    env: {
+      ...process.env,
+      PROJECT_OPS_ARCHIVE: archive,
+      PROJECT_OPS_ARCHIVE_SHA256: archiveSha256,
+      ...hostRoot === undefined ? {} : { PROJECT_OPS_HOST_ROOT: hostRoot },
+    },
+  })
+
+  run(process.execPath, [...cli, 'plugin', '--profile', profile, 'remove', packageName], { env: isolatedEnv })
   const removed = readProfileManifest(temporaryHome, profile)
-  invariant(removed.dependencies?.['dsh-project-ops'] === undefined, 'temporary Profile dependency survived removal')
-  invariant(!removed.dsh?.profile?.bundles?.includes('dsh-project-ops'), 'temporary Profile Bundle layer survived removal')
+  invariant(removed.dependencies?.[packageName] === undefined, `temporary Profile dependency ${packageName} survived removal`)
+  invariant(!removed.dsh?.profile?.bundles?.includes(packageName), `temporary Profile Bundle layer ${packageName} survived removal`)
   invariant(directorySentinel(liveHome) === liveBefore, 'live ~/.dsh top-level sentinel changed')
 
-  process.stdout.write(`archive-sha256: ${createHash('sha256').update(readFileSync(archive)).digest('hex')}\n`)
-  process.stdout.write('project-ops-smoke: PASS archive, isolated install, composition, workspace auto receipt, source/config freshness, verification gate, removal, live-home sentinel\n')
+  process.stdout.write(`archive-identity: ${packageName}@${identity.version ?? sourceVersion}, Harness ${dshVersion}\n`)
+  process.stdout.write(`archive-sha256: ${archiveSha256}\n`)
+  process.stdout.write('project-ops-smoke: PASS archive identity, entry whitelist, isolated install and Bundle activation, dump-config composition, installed/packed byte equality, mandatory real-Profile verification, removal, live-home sentinel\n')
 } finally {
   if (originalDshHome === undefined) delete process.env.DSH_HOME
   else process.env.DSH_HOME = originalDshHome

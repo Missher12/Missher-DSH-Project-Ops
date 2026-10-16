@@ -1,40 +1,114 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 /**
- * Known real Host roots, labelled by distribution. The first two are the Missher
- * community desktop build (the rc.2 fixture extracted from the retained local
- * deb and the installed alpha.2 app); the third is the official npm alpha line.
- * A caller may also select any other real project root explicitly.
+ * How a target came to be selected. A path, or a caller's own label, says
+ * nothing about distribution provenance: the manifest name/version and its
+ * digest verify which installed artifact this is, not who published it, so the
+ * two are recorded as separate fields.
  */
-export const KNOWN_HOSTS = {
-  'community-rc2': '/home/missher/Projects/DSH-Recovery-20261012/desktop-upgrade/shared-host-fixtures/rc2-root/opt/DeepSeek Harness/resources/app/dsh',
-  'community-alpha2': '/opt/DeepSeek Harness/resources/app/dsh',
-  'official-alpha5': '/home/missher/Projects/DSH-Recovery-20261012/usage-review/completion-20261017/official-alpha5',
+export const SOURCE = {
+  checkout: 'checkout',
+  caller: 'caller supplied',
+  unknown: 'unknown',
 }
 
 /**
- * Label a selected Host root for reports. Only a path that resolves to one of
- * the known roots is labelled; anything else stays `custom` rather than being
- * described as a distribution it is not.
- * @param directory - Host root.
- * @returns the distribution label.
+ * Label one selected root.
+ * @param directory - target root.
+ * @param root - the repository root, when the caller knows it.
+ * @returns `checkout` for the repository's own install, otherwise `caller supplied`; never a distribution claim.
  */
-export function hostSourceOf(directory) {
-  let resolved
+export function hostSourceOf(directory, root) {
   try {
-    resolved = realpathSync(directory)
+    if (root !== undefined && realpathSync(root) === realpathSync(directory)) return SOURCE.checkout
+    return SOURCE.caller
   } catch {
-    return 'custom'
+    return SOURCE.unknown
   }
-  for (const [label, known] of Object.entries(KNOWN_HOSTS)) {
-    try {
-      if (realpathSync(known) === resolved) return label
-    } catch { /* a known root that is not installed here cannot label anything */ }
+}
+
+/**
+ * Read the selected Host set from the environment.
+ *
+ * `PROJECT_OPS_HOST_TARGETS` is an optional `label=path` list (comma or newline
+ * separated; a bare path is accepted and labelled by the caller side only).
+ * `PROJECT_OPS_HOST_ROOT` selects exactly one target. With neither, the
+ * checkout's own installed SDK is used. Nothing is scanned or downloaded, and a
+ * target that does not exist is an error rather than a fallback.
+ * @param env - environment to read.
+ * @param root - repository root used for the default target.
+ * @returns one target per entry, in order.
+ */
+export function selectHostTargets(env, root) {
+  const targets = []
+  const list = env.PROJECT_OPS_HOST_TARGETS
+  if (typeof list === 'string' && list.trim() !== '') {
+    for (const row of list.split(/[\n,]/u).map(value => value.trim()).filter(value => value !== '')) {
+      const separator = row.indexOf('=')
+      if (separator === -1) {
+        targets.push({ label: SOURCE.caller, directory: resolve(row) })
+        continue
+      }
+      // `=path` and `label=` are rejected: resolving an empty path would point
+      // the whole check at the current working directory and pass by accident.
+      const label = row.slice(0, separator).trim()
+      const path = row.slice(separator + 1).trim()
+      assert(label !== '', `PROJECT_OPS_HOST_TARGETS entry has an empty label: ${row}`)
+      assert(path !== '', `PROJECT_OPS_HOST_TARGETS entry has an empty path: ${row}`)
+      targets.push({ label, directory: resolve(path) })
+    }
   }
-  return 'custom'
+  const single = env.PROJECT_OPS_HOST_ROOT
+  if (targets.length === 0 && typeof single === 'string' && single.trim() !== '') {
+    targets.push({ label: SOURCE.caller, directory: resolve(single) })
+  }
+  if (targets.length === 0) targets.push({ label: SOURCE.checkout, directory: resolve(root) })
+  for (const target of targets) {
+    assert(existsSync(target.directory) && statSync(target.directory).isDirectory(),
+      `selected Host target does not exist: ${target.label}; set PROJECT_OPS_HOST_ROOT=<host root> or PROJECT_OPS_HOST_TARGETS=<label>=<path>[,<label>=<path>]`)
+  }
+  return targets
+}
+
+/**
+ * Whether a package name is a plain npm name, scoped or not.
+ * @param name - candidate name.
+ * @returns true when it is usable as an install argument and a node_modules path.
+ */
+export function isPackageName(name) {
+  return typeof name === 'string' && /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(name)
+}
+
+/**
+ * node_modules path of one installed package.
+ *
+ * A scoped name is two path segments, so the identity read from the archive
+ * manifest — never a constant — decides where the install actually lands.
+ * @param nodeModules - a `node_modules` directory.
+ * @param name - verified package name.
+ * @returns the package directory.
+ */
+export function installedPathFor(nodeModules, name) {
+  assert(isPackageName(name), `not a package name: ${String(name)}`)
+  return join(nodeModules, ...name.split('/'))
+}
+
+/**
+ * Package identity taken from an archive manifest, cross-checked against the
+ * source manifest so the check cannot drift from what was actually packed.
+ * @param manifestText - `package/package.json` contents from the archive.
+ * @param expectedName - the source package's own name.
+ * @returns the verified name and version.
+ */
+export function archiveIdentity(manifestText, expectedName) {
+  const manifest = JSON.parse(manifestText)
+  const name = manifest.name
+  assert(isPackageName(name), `archive manifest has no usable name: ${String(name)}`)
+  assert.equal(name, expectedName, `archive manifest name ${name} differs from the source package ${expectedName}`)
+  return { name, version: typeof manifest.version === 'string' ? manifest.version : null }
 }
 
 /** Resolve packages only through a selected project's explicit installation links, including pnpm links. */
@@ -54,7 +128,9 @@ export function createHostResolver(directory, options = {}) {
   }
   const installation = {
     root,
-    source: options.source ?? hostSourceOf(root),
+    // A caller label is only a label: it is recorded beside the verified fields,
+    // never merged into them.
+    source: { kind: options.sourceKind ?? SOURCE.unknown, label: options.source ?? options.sourceKind ?? SOURCE.unknown },
     manifestPath: realpathSync(manifestPath),
     nodeModules,
     realNodeModules: realpathSync(nodeModules),
@@ -101,7 +177,7 @@ export function createHostResolver(directory, options = {}) {
 
 /**
  * Record what a selected Host actually is, without asserting a version the
- * caller did not pin: root, distribution label, SDK and Cordis identity, and the
+ * caller did not pin: root, caller label, SDK and Cordis identity, and the
  * manifest digests the verification reports cite.
  * @param host - a resolver from {@link createHostResolver}.
  * @returns the host identity record.

@@ -20,7 +20,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { KNOWN_HOSTS, createHostResolver, describeHost, hostSourceOf } from './selected-host.mjs'
+import { SOURCE, createHostResolver, describeHost, selectHostTargets } from './selected-host.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -82,10 +82,10 @@ function webShellAssets(hostRoot) {
 }
 
 /** Check one Host root and return its row. */
-function inspectHost(hostRoot, label) {
+function inspectHost(hostRoot, label, sourceKind) {
   const row = { label, root: hostRoot, available: true,
     method: 'static clue scan of compiled artifacts', staticClueOnly: true, behavioural: false, packages: {}, missing: [] }
-  const host = createHostResolver(hostRoot, { source: label })
+  const host = createHostResolver(hostRoot, { source: label, sourceKind })
   row.host = describeHost(host)
   const shell = webShellAssets(hostRoot)
   for (const [name, members] of Object.entries(NODE_SERVICES)) {
@@ -154,19 +154,22 @@ function inspectHost(hostRoot, label) {
 
 const argumentHost = process.argv.indexOf('--host-root')
 const argumentSource = process.argv.indexOf('--source')
+// One explicit root, or the shared selection rule (`PROJECT_OPS_HOST_TARGETS` /
+// `PROJECT_OPS_HOST_ROOT`, defaulting to this checkout). Nothing is discovered
+// by scanning, and a selected target that is absent fails the run.
 const targets = argumentHost === -1
-  ? Object.entries(KNOWN_HOSTS)
-  : [[argumentSource === -1 ? hostSourceOf(process.argv[argumentHost + 1]) : process.argv[argumentSource + 1], process.argv[argumentHost + 1]]]
+  ? selectHostTargets(process.env, root).map(target => ({ label: target.label, directory: target.directory, sourceKind: target.label === SOURCE.checkout ? SOURCE.checkout : SOURCE.caller }))
+  : [{ label: argumentSource === -1 ? SOURCE.caller : process.argv[argumentSource + 1], directory: process.argv[argumentHost + 1], sourceKind: SOURCE.caller }]
 
 const hosts = []
-for (const [label, hostRoot] of targets) {
+for (const [label, hostRoot, sourceKind] of targets.map(target => [target.label, target.directory, target.sourceKind])) {
   if (!existsSync(hostRoot)) {
     // An absent target is recorded as unavailable, never as a passed check.
-    hosts.push({ label, root: hostRoot, available: false, note: 'target root is not present on this machine' })
+    hosts.push({ label, root: hostRoot, available: false, note: 'selected target is not present on this machine' })
     continue
   }
   try {
-    hosts.push(inspectHost(hostRoot, label))
+    hosts.push(inspectHost(hostRoot, label, sourceKind))
   } catch (cause) {
     hosts.push({ label, root: hostRoot, available: true, error: cause instanceof Error ? cause.message : String(cause) })
   }

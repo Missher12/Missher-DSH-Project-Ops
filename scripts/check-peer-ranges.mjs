@@ -20,33 +20,54 @@ import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { KNOWN_HOSTS, hostSourceOf } from './selected-host.mjs'
+import { selectHostTargets } from './selected-host.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-/** Hosts whose in-tree semver may be used as the reference implementation. */
-const HOST_ROOTS = [
-  process.env.PROJECT_OPS_SEMVER_ROOT,
-  KNOWN_HOSTS['official-alpha5'],
-  KNOWN_HOSTS['community-alpha2'],
-  KNOWN_HOSTS['community-rc2'],
-].filter(value => typeof value === 'string' && value.length > 0)
-
+/**
+ * Hosts whose in-tree semver may be used as the reference implementation: the
+ * explicit `--semver-root` / `PROJECT_OPS_SEMVER_ROOT` override, otherwise the
+ * selected Host targets from the shared selection rule (which defaults to this
+ * checkout). A selected target without semver is an error — the check never
+ * switches to a different Host on its own.
+ */
 const argument = process.argv.indexOf('--semver-root')
-if (argument !== -1) HOST_ROOTS.unshift(process.argv[argument + 1])
+const override = argument !== -1 ? process.argv[argument + 1] : process.env.PROJECT_OPS_SEMVER_ROOT
+const TARGETS = typeof override === 'string' && override.trim() !== ''
+  ? [{ label: 'caller supplied', directory: resolve(override) }]
+  : selectHostTargets(process.env, root)
 
-/** Locate a real semver implementation and report where it came from. */
+/**
+ * Locate a real semver implementation among the selected targets.
+ *
+ * Only the target's own installed link counts: `createRequire` would otherwise
+ * walk up the directory tree and borrow a `semver` from an unrelated ancestor,
+ * which would silently "pass" for a target that has none. A target without the
+ * package is reported as such; nothing falls back to another Host.
+ */
 function loadSemver() {
-  for (const hostRoot of HOST_ROOTS) {
-    const anchor = join(hostRoot, 'package.json')
-    if (!existsSync(anchor)) continue
+  const attempted = []
+  for (const target of TARGETS) {
+    if (!existsSync(join(target.directory, 'package.json'))) {
+      attempted.push(`${target.label}: no package.json in the selected root`)
+      continue
+    }
+    const linked = join(target.directory, 'node_modules', 'semver', 'package.json')
+    if (!existsSync(linked)) {
+      attempted.push(`${target.label}: no installed semver link at node_modules/semver`)
+      continue
+    }
     try {
-      const require = createRequire(anchor)
-      return { semver: require('semver'), version: require('semver/package.json').version, hostRoot, anchor, source: hostSourceOf(hostRoot) }
-    } catch { /* try the next installed Host */ }
+      const require = createRequire(linked)
+      const manifest = JSON.parse(readFileSync(linked, 'utf8'))
+      return { semver: require('semver'), version: manifest.version,
+        hostRoot: target.directory, anchor: linked, source: target.label }
+    } catch (cause) {
+      attempted.push(`${target.label}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    }
   }
-  throw new Error('no installed Host provides `semver`; pass --semver-root <host root>')
+  throw new Error(`no selected Host provides \`semver\` through its own installed link: ${attempted.join('; ')}; pass --semver-root <host root> or PROJECT_OPS_HOST_ROOT=<host root>`)
 }
 
 const { semver, version: semverVersion, hostRoot, anchor, source: semverSource } = loadSemver()

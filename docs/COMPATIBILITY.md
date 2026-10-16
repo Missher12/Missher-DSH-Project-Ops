@@ -68,6 +68,39 @@ react                   ^18.2.0
 - `dsh.client.inject` 保留 `@deepseek-ai/dsh-api-remotes`、`@deepseek-ai/dsh-api-workspace-files`、`@deepseek-ai/dsh-client-ui-conversation`、`@deepseek-ai/dsh-client-locale`，去掉 `@deepseek-ai/dsh-client-ui-sidebar-right`。客户端模块加载器对**不存在的**依赖行直接跳过，对**加载失败**的依赖行才会级联报错；因此保留前四项是为了让面板依赖的槽位与远端按序就绪，去掉可选预览包是为了不让它成为失败级联点。
 - 客户端 bundle 只 `require` 平台模块表行：`react`、`react/jsx-runtime`、`react-dom`、`@deepseek-ai/dsh-client-ui-primitives`（构建门禁强制）。两个已核验的 Web shell 都暴露同一张表；官方 alpha.5 未链接独立 primitives 包时，以 Web shell 内联的模块表为准，不判作"服务缺失"，也不引入第二份 React。
 
+## 五点五、断言归属：包装由 package 负责，行为由 Profile 负责
+
+本节把原先写在 `scripts/smoke.mjs` 里、由**手工搭建的 Context runtime** 执行的断言，逐条对到真实 Profile（`scripts/smoke-profile.mjs` + `scripts/fixtures/official-profile.mjs`）的等价检查上。手工 runtime 已删除：它需要自行伪造 Kernel/Agent/Session 依赖，且每补一层假实现就离真实 Host 更远。
+
+| 原手工 runtime 断言 | 现在的真实 Profile 等价检查 | 覆盖状态 |
+| --- | --- | --- |
+| Agent guidance 注册进 systemPrompt | Profile 内 `systemPrompt.assemble()` 段名断言 | 已覆盖 |
+| 任务发现（package/make/just） | Profile 内 `task_list` / `task_plan` 在真实工作区上发现任务 | 已覆盖 |
+| 真实 workspace 执行 + marker | Profile 内 `task_run` 真实执行 `verify.cjs` 并回读 `.output/verified` | 已覆盖 |
+| gate `passed` | Profile 内 `verification_gate` 判定 `passed` | 已覆盖 |
+| `doctor` 能力面 | Profile 内 `doctor` 断言 `foreground` 等真实能力 | 已覆盖 |
+| 源码变更使回执过期 | Profile 内改写 `packages/app/input.js` 后判 `stale` | 已覆盖（本轮强化，见下） |
+| 策略拒绝 | Profile 内 `tools/pre-execute` deny 后判 `stale` | 已覆盖（本轮强化） |
+| background wait | Profile 内后台任务 `task_collect` 等待并结算 | 已覆盖 |
+| stranger owner fence | Profile 内陌生 Agent 调用被拒 | 已覆盖 |
+| 原生取消 | Profile 内 `job_kill` + 心跳停止断言 | 已覆盖 |
+| 超时提升后台 | Profile 内前台超时 → `kind: 'promoted'` → 收集/取消 | 已覆盖（本轮强化） |
+
+### 本轮强化的三条（都在同一个 Profile fixture 内，未新建第二个 fixture）
+
+- **策略拒绝必须有副作用证据**：先删除上一次成功运行真实产生的 marker（`packages/app/.output/verified`）并断言其已不存在，再触发 deny；deny 之后断言该 marker **仍未**被重建。只看 `receipt.outcome !== 'succeeded'` 无法区分"被拒绝"与"跑了但以别的方式失败"。
+- **源码失效与配置失效各有独立新鲜基线**：两次失效断言不共用一份回执，否则第二次断言会因为第一次的原因就已成立（假阳性）。两条路径都先把任务跑到**终态**（`auto` 可能提升为后台，必须先 `collect` 到 `succeeded`），再要求该回执的 gate 判 `passed`，然后只做一次变更：
+  - **源码失效**：改 `packages/app/input.js` → `stale`，`reasonCodes` 含 `plan-digest-mismatch`；
+  - **配置失效**：恢复 `input.js`、重新 `task_plan` 与 `task_run`/`collect` 取得**新的**新鲜回执并判 `passed`，然后改快照覆盖的 `.npmrc` → `stale`，`reasonCodes` 含 `execution-evidence-stale`（回执所依据的授权输入树已变）。
+- **超时提升保留显式前台语义**：超时用例显式传 `mode: 'foreground'`，并要求 `kind === 'promoted'`，即提升来自 Host 对前台调用的超时处理，而不是 `auto` 的后台优先路径；报告里同时记录 `requestedMode`。
+
+### 分层
+
+- **行为（含上述全部断言）** 由 Profile 负责：真实 Host 入口、真实服务、真实子进程与真实文件副作用。
+- **包装** 由 package 烟雾负责：归档身份、条目白名单、隔离 Profile 的 `plugin add` 依赖与 Bundle 层、`--dump-config` 组合、已装 `lib` 与打包 `lib` 逐字节一致、`plugin remove` 后依赖/Bundle 消失、`~/.dsh` 顶层哨兵不变。
+- `scripts/smoke.mjs` 现在**必跑** Profile 脚本（`PROJECT_OPS_ARCHIVE` + `PROJECT_OPS_ARCHIVE_SHA256` 指向它自己刚检查过的同一份字节，并传同一个 selected Host 根）：子进程非零即 package 失败，不存在"报告存在就算过"的路径。因此 CI 里不再单列一个重复的 `smoke:profile` 步骤，`smoke:package` 步骤命名为 *Package and mandatory Profile verification*；整体门禁仍同时强制 Profile + package + clean 三条。
+- 不得据此宣称 Windows 已通过：CI 矩阵与真实 Host 证据仍以实际运行记录为准。
+
 ## 六、证据与运行命令
 
 已执行结果（2026-10-17，隔离环境）：类型检查与构建通过；修复后的针对性回归 3 文件 13 项（含 7 项真实 cordis 回归）通过；peer 范围实测、三套真实目标的静态接口面、归档声明消费（strict、`skipLibCheck=false`，在已定版的开发 SDK 上针对归档 tgz）与三套目标的 UI 契约检查均通过。UI 契约在官方 alpha.5 上因 primitives 内联而把导出级校验标为静态不可验，该点随后由官方 alpha.5 的真实 Web 加载与四状态验收证明。此前的 114 项全量测试属于历史记录，不作为本轮的资源通过证据。
@@ -77,11 +110,25 @@ react                   ^18.2.0
 - `scripts/check-host-surface.mjs`：对三个真实目标逐一记录发行标签、SDK/Cordis 版本与 manifest SHA-256，并核对上表"最低接口"的成员是否存在于该 Host 的编译产物中。它是**静态成员存在性**检查，不等于行为通过。
 - `scripts/check-peer-ranges.mjs`：用 Host 自带 semver 实测范围包含性。
 
+### Host 选择规则（所有验证脚本共用）
+
+- `PROJECT_OPS_HOST_ROOT=<根>`：指定单一真实目标。
+- `PROJECT_OPS_HOST_TARGETS=<标签>=<根>[,<标签>=<根>…]`：一次指定多个目标；不写标签时记为「caller supplied」。
+- `PROJECT_OPS_HOST_VERSION=<版本>`：可选，对选定目标做精确版本比对（不匹配即失败）。
+- 都不设置时使用**本 checkout 自己安装的 SDK**。目标不存在、或选定目标没有所需能力（例如 `semver`）时**直接失败并提示如何选择**，不扫描日常目录、不下载、不回退到其他祖先 `node_modules`。
+- 依赖只在**选定根自己的安装链接**里查找：未安装开发依赖的 checkout 上没有 `node_modules/semver` 时，`check:peers` 会失败并提示用 `PROJECT_OPS_HOST_ROOT=<根>`（或 `PROJECT_OPS_HOST_TARGETS`）指向一个确实装有该依赖的真实目标，而不是沿父目录借用。
+- 记录分两个字段：调用方给的标签（`caller supplied` 等）只是标签；包名、版本与 manifest 摘要才是核实过的身份。路径或标签不能证明发行来源。
+
+CI 只上传经字段白名单、长度上限与凭据/本机路径清理的 `ci-diagnostics` 目录（阶段、运行件身份与摘要、子进程退出事实、首个错误），并且**失败时也上传**且不改变门禁结果；不上传整个 `.artifacts`、profile、会话、凭据、`node_modules`、归档或环境变量。
+
+Profile 烟雾测试的失败记录遵循两条规则：读取的 fixture 摘要必须属于**当前阶段**（`probe-installed` 读安装报告、`probe-removed` 读卸载报告，任何 boot 之前没有报告），且**无报告时仍以原始命令的退出状态为准**，不会把缺失摘要当成异常或误读此前的成功报告。诊断写入失败只单独记录，不取代原始错误。
+
 动态证据（需在隔离环境顺序执行，输出留档）：
 
 ```bash
 # 1. 范围包含性（任选一个真实 Host 的 semver）
 node scripts/check-peer-ranges.mjs --semver-root "<host-root>"
+# 多目标静态接口面：PROJECT_OPS_HOST_TARGETS="rc2=<根>,alpha2=<根>,alpha5=<根>" node scripts/check-host-surface.mjs
 
 # 2. 三个真实目标的接口面
 node scripts/check-host-surface.mjs
@@ -95,9 +142,19 @@ node scripts/build.mjs
 npm pack --pack-destination .artifacts/pack
 PROJECT_OPS_ARCHIVE=<tgz> PROJECT_OPS_ARCHIVE_SHA256=<sha256> node scripts/check-declarations.mjs
 
-# 5. 选定 Host 的原生 Profile 装载（脚本按 Host 实际版本运行，可选 PROJECT_OPS_HOST_VERSION 严格定版）
-PROJECT_OPS_HOST_ROOT="<host-root>" node scripts/smoke-profile.mjs
+# 5. 包装 + 强制真实 Profile（一条命令：self-pack 后把同一份字节与摘要交给 Profile 脚本）
+PROJECT_OPS_HOST_ROOT="<host-root>" node scripts/smoke.mjs
+
+# 5b. 只跑 Profile（同一脚本，仍可用显式归档与摘要绑定固定候选）
+PROJECT_OPS_HOST_ROOT="<host-root>" \
+  PROJECT_OPS_ARCHIVE=<tgz> PROJECT_OPS_ARCHIVE_SHA256=<sha256> \
+  node scripts/smoke-profile.mjs
+
+# 6. 隔离清除检查
+node scripts/smoke-clean.mjs
 ```
+
+`smoke:package` 与 `smoke:profile` 不再是两条互不相干的步骤：前者必跑后者，且只对**它自己刚检查过的归档字节**运行（摘要由脚本从该归档算出后传入）。CI 因此只保留 `smoke:package`（步骤名 *Package and mandatory Profile verification*）与 `smoke:clean`，门禁整体仍是 Profile + package + clean。
 
 归档只包含白名单内的源码与文档（`package.json` 的 `files` 列表），隔离证据、学习数据与个人会话不在其中。
 

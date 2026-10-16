@@ -1,10 +1,10 @@
 // Test-only consumer loaded by the official dsh Profile; never shipped in the plugin archive.
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { createProbeEvidence } from './probe-evidence.mjs'
+import { createProbeEvidence, runGuardedCleanup, settleRun } from './probe-evidence.mjs'
 
 export const name = 'project-ops-official-profile-probe'
 export const inject = ['appReady', 'appExit', 'agents', 'agentLoop', 'tools', 'jobs', 'systemPrompt']
@@ -73,6 +73,10 @@ async function probe(ctx, config, signal, evidence) {
     return response.value
   }
   const checks = []
+  /** First business exception; cleanup must never replace it. */
+  let failure
+  /** Success value, settled only after cleanup has run. `result` above is the call helper. */
+  let probeReport
   try {
     const development = await call('missher_project_ops_document_write', { action: 'begin', slug: 'profile-acceptance', data: { title: 'Profile acceptance', requirements: 'Real Host document persistence', design: 'Native filesystem', steps: ['write', 'review'], acceptance: ['files on disk'], progress: 'started' } })
     assert(existsSync(join(config.workspace, development.planPath)))
@@ -125,13 +129,21 @@ async function probe(ctx, config, signal, evidence) {
     assert.equal(forwardedOutcome, 'succeeded')
     checks.push('nested-context-and-conclusion')
 
+    // Remove the marker the earlier successful run really produced, so the deny
+    // is proven by the native side effect staying absent — an outcome field
+    // alone could not distinguish "denied" from "ran and failed differently".
+    const verifyMarker = join(config.workspace, 'packages/app/.output/verified')
+    assert(existsSync(verifyMarker))
+    rmSync(verifyMarker, { force: true })
+    assert(!existsSync(verifyMarker))
     const reject = owner.ctx.on('tools/pre-execute', (exec, next) => exec.name === shell
       ? { kind: 'deny', reason: 'Profile fixture denies the next native shell call.' } : next())
     const denied = await call('missher_project_ops_task_run', runArgs)
     reject()
     assert.notEqual(denied.receipt.outcome, 'succeeded')
+    assert(!existsSync(verifyMarker), 'the denied native call still produced its marker')
     assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'stale')
-    checks.push('native-policy-denied', 'old-success-cannot-hide-new-failure')
+    checks.push('native-policy-denied', 'denied-call-produced-no-side-effect', 'old-success-cannot-hide-new-failure')
 
     const listed = await call('missher_project_ops_task_list', {})
     const long = listed.tasks.find(task => task.name === 'long')
@@ -166,7 +178,10 @@ async function probe(ctx, config, signal, evidence) {
 
     let timeoutResult
     afterNative = value => { timeoutResult = value }
-    const timed = await call('missher_project_ops_task_run', { taskId: long.id, manifestDigest: long.manifestDigest })
+    // Explicit foreground: promotion must come from the Host's own foreground
+    // timeout, not from the background-first `auto` path.
+    const timeoutRequest = { taskId: long.id, manifestDigest: long.manifestDigest, mode: 'foreground' }
+    const timed = await call('missher_project_ops_task_run', timeoutRequest)
     afterNative = () => {}
     assert.equal(timeoutResult.kind, 'promoted')
     assert.equal(timed.receipt.outcome, 'running')
@@ -178,23 +193,86 @@ async function probe(ctx, config, signal, evidence) {
     assert.equal(stopped.receipt.outcome, 'aborted')
     outstanding.delete(promoted.jobId)
     checks.push('foreground-promotion-retains-native-job', 'promoted-job-cancelled')
+    // Two independent invalidations, each with its OWN fresh baseline. Sharing
+    // one baseline would make the second assertion true for the first reason
+    // already, which is a false positive rather than coverage.
+    /**
+     * Run one planned task and settle it to a terminal receipt (auto may promote).
+     * The task is mandatory: falling back to an earlier plan's task would let a
+     * disappeared task keep producing receipts against a plan nobody re-read.
+     */
+    const runToTerminal = async target => {
+      const dispatched = await call('missher_project_ops_task_run', { taskId: target.id, manifestDigest: target.manifestDigest })
+      if (dispatched.receipt.outcome !== 'running') return dispatched.receipt
+      const job = dispatched.receipt
+      outstanding.add(job.jobId)
+      const settled = (await call('missher_project_ops_task_collect', { taskId: job.taskId, manifestDigest: job.manifestDigest,
+        jobId: job.jobId, nestedCallId: job.nestedCallId, startedAt: job.startedAt, waitMs: 10000 })).receipt
+      outstanding.delete(job.jobId)
+      return settled
+    }
+
+    // (1) source invalidation: a fresh receipt and a passed gate, then one edit.
+    // The plan is re-read here: writing PLAN/READY already changed the source
+    // tree, so the first plan's digest would fail the baseline gate for a reason
+    // that has nothing to do with the edit under test.
+    const sourcePlan = await call('missher_project_ops_task_plan', planArgs)
+    const sourceTask = sourcePlan.tasks.find(row => row.id === task.id)
+    assert(sourceTask !== undefined, 'the verify task is missing from the re-read plan before the source-change baseline')
+    const sourceReceipt = await runToTerminal(sourceTask)
+    assert.equal(sourceReceipt.outcome, 'succeeded')
+    const sourceGateArgs = { ...planArgs, planDigest: sourcePlan.planDigest, receipts: [sourceReceipt] }
+    assert.equal((await call('missher_project_ops_verification_gate', sourceGateArgs)).verdict, 'passed')
+    checks.push('fresh-receipt-passes-before-source-change')
     writeFileSync(join(config.workspace, 'packages/app/input.js'), 'export const changed = true\n')
-    assert.equal((await call('missher_project_ops_verification_gate', gateArgs)).verdict, 'stale')
+    const sourceStale = await call('missher_project_ops_verification_gate', sourceGateArgs)
+    assert.equal(sourceStale.verdict, 'stale')
+    assert(sourceStale.reasonCodes.includes('plan-digest-mismatch'))
     checks.push('source-edit-invalidates-receipt')
-    return { passed: true, phase: 'installed', tools: names, guidance: true, checks,
+
+    // (2) configuration invalidation: restore the source, re-plan and re-run to a
+    // new fresh receipt first — the previous one is already stale by now.
+    writeFileSync(join(config.workspace, 'packages/app/input.js'), 'export const changed = false\n')
+    const replanned = await call('missher_project_ops_task_plan', planArgs)
+    const replannedTask = replanned.tasks.find(row => row.id === task.id)
+    assert(replannedTask !== undefined, 'the verify task is missing from the re-read plan before the config-change baseline')
+    const configReceipt = await runToTerminal(replannedTask)
+    assert.equal(configReceipt.outcome, 'succeeded')
+    const configGateArgs = { ...planArgs, planDigest: replanned.planDigest, receipts: [configReceipt] }
+    assert.equal((await call('missher_project_ops_verification_gate', configGateArgs)).verdict, 'passed')
+    checks.push('fresh-receipt-passes-before-config-change')
+    // The configuration file the snapshot covers (`.npmrc`), not the task's own
+    // manifest: the receipt must go stale because the authorized input tree it
+    // was produced against changed.
+    writeFileSync(join(config.workspace, '.npmrc'), 'ignore-scripts=true\n')
+    const configStale = await call('missher_project_ops_verification_gate', configGateArgs)
+    assert.equal(configStale.verdict, 'stale')
+    assert(configStale.reasonCodes.includes('execution-evidence-stale'))
+    checks.push('config-snapshot-invalidates-a-fresh-receipt')
+
+    probeReport = { passed: true, phase: 'installed', tools: names, guidance: true, checks,
       runtime: { node: process.version, platform: process.platform, arch: process.arch },
-      timeout: { kind: timeoutResult.kind, receiptOutcome: timed.receipt.outcome },
+      timeout: { requestedMode: timeoutRequest.mode, kind: timeoutResult.kind, receiptOutcome: timed.receipt.outcome },
       modelProjection: { contexts: forwarded.additionalContexts.map(row => ({ role: row.role, source: row.source, content: row.content })),
         concludesTurn: forwarded.concludesTurn, outcome: forwardedOutcome } }
   } catch (error) {
     evidence.recordError('check-error', error)
-    throw error
+    failure = error
   } finally {
-    removeNativeObserver()
-    for (const id of outstanding) {
-      ctx.jobs.kill(id, owner.session.id)
-      await ctx.jobs.wait(id, 10000, owner.session.id)
+    // Each step is guarded by the shared helper: every one runs, the business
+    // exception is preserved, and cleanup failures are recorded beside it.
+    await runGuardedCleanup([
+      ['remove native observer', () => { removeNativeObserver() }],
+      ...[...outstanding].flatMap(id => [
+        [`kill job ${id}`, () => { ctx.jobs.kill(id, owner.session.id) }],
+        [`wait job ${id}`, () => ctx.jobs.wait(id, 10000, owner.session.id)],
+      ]),
+      ...handles.slice().reverse().map(handle => ['dispose agent handle', () => handle.dispose()]),
+    ], (label, error) => evidence.noteCleanupError(label, error))
+    if (failure === undefined && evidence.cleanupErrors.length > 0) {
+      evidence.recordError('cleanup-error', new Error(evidence.cleanupErrors.join('; ')))
     }
-    for (const handle of handles.reverse()) await handle.dispose()
   }
+  // One settle point: a success that leaves cleanup failures behind is not a pass.
+  return settleRun(probeReport, failure, evidence.cleanupErrors)
 }

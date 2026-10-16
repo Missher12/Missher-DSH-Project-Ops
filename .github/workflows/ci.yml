@@ -29,6 +29,23 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
-      - run: pnpm run smoke:profile
-      - run: pnpm run smoke:package
+      # Package and mandatory Profile verification in one step: `smoke:package`
+      # inspects the archive and then runs the real Profile script against those
+      # same bytes, so a separate profile step would only repeat it.
+      - name: Package and mandatory Profile verification
+        run: pnpm run smoke:package
       - run: pnpm run smoke:clean
+      # Bounded, scrubbed diagnostics only (phases, run identity, subprocess
+      # facts, first error). Never the whole .artifacts tree, a profile, a
+      # session, credentials, node_modules, an archive or the environment.
+      # Uploaded even when a smoke gate fails, without changing its outcome.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-diagnostics-${{ matrix.os }}
+          # `.artifacts` is a hidden directory: without this input the upload
+          # would silently contain nothing (include-hidden-files defaults false).
+          path: .artifacts/ci-diagnostics
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

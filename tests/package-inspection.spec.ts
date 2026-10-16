@@ -1,8 +1,31 @@
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { assertArchiveEntries, assertPackageManifest, REQUIRED_ENTRIES } from '../scripts/package-inspection.mjs'
+import { assertArchiveEntries, assertPackageManifest, inspectArchive, REQUIRED_ENTRIES } from '../scripts/package-inspection.mjs'
 
 const manifest = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+test('an archive whose digest does not match the bound one fails before any entry work', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'project-ops-bind-'))
+  try {
+    mkdirSync(join(directory, 'package'), { recursive: true })
+    writeFileSync(join(directory, 'package', 'package.json'), JSON.stringify({ name: '@missher/dsh-project-ops' }))
+    const archive = join(directory, 'candidate.tgz')
+    const packed = spawnSync('tar', ['-czf', archive, '-C', directory, 'package'], { encoding: 'utf8' })
+    expect(packed.status).toBe(0)
+    const actual = createHash('sha256').update(readFileSync(archive)).digest('hex')
+    // `smoke:package` computes this digest from the archive it just inspected and
+    // hands it to the Profile child, so a mismatch must be fatal on its own and
+    // must not be reached only after entry or factory validation.
+    expect(() => inspectArchive(archive, '0'.repeat(64))).toThrow(/SHA-256 mismatch/u)
+    expect(actual).not.toBe('0'.repeat(64))
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 describe('release candidate declarations', () => {
   test('accepts the shipped entry and exact official peer declarations', () => {
     expect(() => assertPackageManifest(manifest())).not.toThrow()
