@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
@@ -10,9 +10,9 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const evidenceRoot = join(root, '.artifacts/r7-instrumentation')
 mkdirSync(evidenceRoot, { recursive: true })
 const directory = mkdtempSync(join(evidenceRoot, 'test-'))
-const execute = (report: string, mode?: string) => spawnSync(process.execPath,
+const execute = (report: string, mode?: string, timeout = 15000) => spawnSync(process.execPath,
   [join(root, 'tests/fixtures/profile-evidence-failure.mjs'), report, ...mode ? [mode] : []],
-  { cwd: root, encoding: 'utf8', timeout: 15000 })
+  { cwd: root, encoding: 'utf8', timeout })
 const records = (attempt: string) => readdirSync(attempt).filter(file => /^\d+-/u.test(file))
   .sort().map(file => JSON.parse(readFileSync(join(attempt, file), 'utf8')))
 
@@ -86,6 +86,11 @@ test('the frozen business context reaches the final upload, not just the attempt
   // A second projection of the same object is stable: the driver projects once
   // and the upload document projects again.
   expect(document.installed.businessFailure).toEqual(fixtureEvidenceFor(uploadDir, 'probe-installed').summary.businessFailure)
+  // On a non-Windows platform the diagnostic is reported as skipped and never
+  // called at all.
+  expect(fixture.startupDiagnostic.result).toBe('skipped-not-windows')
+  expect(fixture.startupDiagnostic.attempted).toBe(false)
+  expect(existsSync(join(directory, 'nested-installed.json.diag-calls.json'))).toBe(false)
 }, 35000)
 
 test('the canonical Host stream shape keeps long stderr text up to its own cap', () => {
@@ -127,6 +132,80 @@ test('the canonical Host stream shape keeps long stderr text up to its own cap',
   expect(uploaded).not.toContain('spill.txt')
   expect(uploaded).not.toContain('truncated')
 }, 35000)
+
+/** Run one synthetic Windows mode through the real apply chain. */
+function runWindowMode(name: string, childTimeoutMs = 15000) {
+  const report = join(directory, `${name}.json`)
+  expect(execute(report, name, childTimeoutMs).status).toBe(1)
+  const summary = JSON.parse(readFileSync(report, 'utf8'))
+  const calls = JSON.parse(readFileSync(join(directory, `${name}.json.diag-calls.json`), 'utf8'))
+  return { report, summary, calls }
+}
+
+test('the Windows startup diagnostic runs once, on the same agent and the failed workdir, and never changes the first failure', () => {
+  const { report, summary, calls } = runWindowMode('win-diag')
+  // The original business failure is intact: same stage, same tool, still exit 7.
+  expect(summary.passed).toBe(false)
+  expect(summary.error.name).toBe('AssertionError')
+  expect(summary.businessFailure.stage).toBe('declared-workspace-execution')
+  expect(summary.businessFailure.tool.tool).toBe('missher_project_ops_task_run')
+  expect(summary.businessFailure.receipt.exitCode).toBe(7)
+  // Exactly one diagnostic call, same owner agent, same workdir as the failure.
+  expect(calls.diagnostic).toHaveLength(1)
+  expect(calls.diagnostic[0].agentIsOwner).toBe(true)
+  expect(calls.diagnostic[0].workdir).toBe(join(dirname(report), 'packages', 'app'))
+  expect(summary.startupDiagnostic.result).toBe('ok')
+  expect(summary.startupDiagnostic.platform).toBe('win32')
+  // The diagnostic repeated the failure's own directory (packages/app), which is
+  // not the workspace root.
+  expect(calls.diagnostic[0].workdir).toBe(join(dirname(report), 'packages', 'app'))
+  expect(calls.diagnostic[0].workdir).not.toBe(dirname(report))
+  expect(summary.startupDiagnostic.workdirClass).toBe('packages-app')
+  expect(summary.startupDiagnostic.data.npm).toMatchObject({ type: 'ExternalScript', shim: 'npm.ps1',
+    rule: 'block-match-sibling-exe' })
+  expect(summary.startupDiagnostic.data.candidate).toMatchObject({ basename: 'node.exe',
+    matchesHostExecPath: true, exists: true, isFile: true, readable: true })
+  expect(summary.startupDiagnostic.data.start.error).toMatchObject({ win32: true, type: 'Win32Exception',
+    nativeErrorCode: 5 })
+})
+
+test('diagnostic throw, promoted job and late job all keep the first failure and really clean up', () => {
+  const thrown = runWindowMode('win-diag-throw')
+  expect(thrown.summary.startupDiagnostic.result).toBe('throw')
+  expect(thrown.summary.businessFailure.tool.tool).toBe('missher_project_ops_task_run')
+  expect(thrown.summary.businessFailure.receipt.exitCode).toBe(7)
+  expect(thrown.summary.startupDiagnostic.notes.join(' ')).toContain('diagnostic transport exploded')
+
+  const job = runWindowMode('win-diag-job')
+  expect(job.summary.startupDiagnostic.result).toBe('promoted')
+  expect(job.summary.startupDiagnostic.job).toMatchObject({ promoted: true, killed: true, waited: true, terminal: true })
+  // A real kill/wait through the owner session, not merely a set entry.
+  expect(job.calls.jobs.filter(row => row.id === 'synthetic-job-1').map(row => row.op).sort()).toEqual(['kill', 'wait'])
+  expect(job.calls.jobs.every(row => row.caller === 'synthetic-owner-session')).toBe(true)
+  expect(job.summary.businessFailure.receipt.exitCode).toBe(7)
+
+  // The late job resolves after the hard deadline: the summary is already written,
+  // so cleanup is proven by the independent calls file, which the child can only
+  // write after the late handler actually issued kill and wait. The summary says
+  // the cleanup was unproven rather than claiming it settled.
+  const late = runWindowMode('win-diag-late-job', 40000)
+  expect(late.summary.startupDiagnostic.result).toBe('timeout')
+  expect(late.summary.startupDiagnostic.notes.join(' ')).toContain('unproven')
+  expect(late.calls.jobs.filter(row => row.id === 'synthetic-late-job').map(row => row.op).sort()).toEqual(['kill', 'wait'])
+  expect(late.calls.jobs.filter(row => row.id === 'synthetic-late-job').every(row => row.caller === 'synthetic-owner-session')).toBe(true)
+  expect(late.summary.businessFailure.receipt.exitCode).toBe(7)
+}, 90000)
+
+test('malformed, oversized and unsupported diagnostic payloads are classified without touching the business failure', () => {
+  for (const [name, expected] of [['win-diag-badjson', 'invalid-json'], ['win-diag-oversize', 'oversized'],
+    ['win-diag-unsupported', 'unsupported-protocol']] as const) {
+    const { summary } = runWindowMode(name)
+    expect(summary.startupDiagnostic.result).toBe(expected)
+    expect(summary.startupDiagnostic.data).toBeNull()
+    expect(summary.businessFailure.tool.tool).toBe('missher_project_ops_task_run')
+    expect(summary.businessFailure.receipt.exitCode).toBe(7)
+  }
+})
 
 test('records a thrown native error before unwinding without fabricating exit information', () => {
   const report = join(directory, 'thrown.json')

@@ -123,6 +123,62 @@ test('canonical Host stream objects project to bounded text in both passes', () 
     stderr: 'plain string stderr', stdout: 'plain stdout' })
 })
 
+test('the startup diagnostic projects as its own whitelist, twice, beside the business snapshot', () => {
+  const source = { protocol: 1, phase: 'declared-workspace-execution', tool: 'missher_project_ops_task_run',
+    result: 'ok', attempted: true, platform: 'win32', workdirClass: 'packages-app',
+    notes: ['x'.repeat(400)],
+    unknownTop: 'must not survive',
+    data: {
+      powershell: { version: '7.4.6', edition: 'Core', dotnet: '8.0.10', unknown: 'dropped' },
+      npm: { type: 'ExternalScript', shim: 'npm.ps1', rule: 'block-match-sibling-exe' },
+      candidate: { basename: 'node.exe', source: 'shim-sibling-exe', pathDigest: 'a'.repeat(64),
+        matchesHostExecPath: true, exists: true, isFile: true, readable: true, unknown: 'dropped' },
+      cwd: { expectedMatches: true, accessible: true },
+      start: { attempted: true, started: false, exitCode: null, stdoutLength: null, stderrLength: null,
+        timedOut: null, killed: null, cleanupSettled: null, skippedReason: null,
+        error: { win32: true, type: 'Win32Exception', nativeErrorCode: 5,
+          hresult: -2147467259, message: `denied at /home/fixture-user/projects/fixture-project/node.exe ${'m'.repeat(600)}` } },
+    },
+    job: { promoted: false, killed: null, waited: null },
+  }
+  // A fixture summary is projected directly; the driver later attributes it to a
+  // phase, so the diagnostic is read from the phase-nested summary.
+  const once = diagnosticProjection({ passed: false, startupDiagnostic: source })
+  const twice = diagnosticProjection(once)
+  expect(twice).toEqual(once)
+  const diag = once.startupDiagnostic
+  expect(diag.result).toBe('ok')
+  expect(diag.platform).toBe('win32')
+  expect(diag.workdirClass).toBe('packages-app')
+  expect(diag.data.powershell.version).toBe('7.4.6')
+  expect(diag.data.npm.rule).toBe('block-match-sibling-exe')
+  expect(diag.data.candidate).toMatchObject({ basename: 'node.exe', matchesHostExecPath: true, exists: true,
+    isFile: true, readable: true })
+  expect(diag.data.candidate.pathDigest).toBe('a'.repeat(64))
+  expect(diag.data.start.error).toMatchObject({ win32: true, type: 'Win32Exception', nativeErrorCode: 5,
+    hresult: -2147467259 })
+  // Scrub before the cap, and the message keeps its own larger bound.
+  expect(diag.data.start.error.message).toContain('[path]')
+  expect(diag.data.start.error.message.length).toBeLessThanOrEqual(512)
+  expect(diag.notes[0].length).toBeLessThanOrEqual(240)
+  // Unknown fields are dropped at every level, and the document keeps only one copy.
+  const uploaded = ciDiagnosticDocument({ passed: false, installed: once })
+  expect('startupDiagnostic' in uploaded).toBe(false)
+  expect(uploaded.installed.startupDiagnostic.result).toBe('ok')
+  expect(uploaded.installed.startupDiagnostic.data.npm.rule).toBe('block-match-sibling-exe')
+  expect(JSON.stringify(uploaded)).not.toContain('unknownTop')
+  expect(JSON.stringify(uploaded)).not.toContain('"unknown"')
+  expect(JSON.stringify(uploaded)).not.toContain('/home/fixture-user')
+  // Unknown shapes stay null rather than a fabricated value.
+  const empty = diagnosticProjection({ startupDiagnostic: { protocol: 2, platform: 'linux',
+    workdirClass: 'somewhere', data: { candidate: { pathDigest: 'not-a-digest', exists: 'yes' } } } })
+  expect(empty.startupDiagnostic.protocol).toBeNull()
+  expect(empty.startupDiagnostic.platform).toBeNull()
+  expect(empty.startupDiagnostic.workdirClass).toBeNull()
+  expect(empty.startupDiagnostic.data.candidate.pathDigest).toBeNull()
+  expect(empty.startupDiagnostic.data.candidate.exists).toBeNull()
+})
+
 test('every credential shape and machine location is neutralised in the upload', () => {
   const document = ciDiagnosticDocument({
     passed: false,

@@ -259,6 +259,82 @@ function pickBusinessFailure(source) {
   }
 }
 
+/** One object member, untyped; the per-field pickers below decide the shape. */
+const memberOf = (source, key) => source !== null && typeof source === 'object' ? source[key] : undefined
+
+/** A real boolean, or null: a string "true"/"yes" is not a boolean fact. */
+const pickBool = (source, key) => typeof memberOf(source, key) === 'boolean' ? memberOf(source, key) : null
+/** A finite integer, or null: a numeric string is not a number fact. */
+const pickInt = (source, key) => {
+  const value = memberOf(source, key)
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
+}
+/** A scrubbed, capped string, or null. */
+const pickText = (source, key, limit = MAX_STRING) => {
+  const value = memberOf(source, key)
+  return typeof value === 'string' && value.trim().length > 0 ? scrubDiagnosticText(value, limit) : null
+}
+
+/** Longest error message kept from the startup probe. */
+const MAX_STARTUP_MESSAGE = 512
+
+/**
+ * Project the bounded startup diagnostic onto the upload allowlist.
+ *
+ * It is a sibling of the business snapshot, never part of it, and it is explicit
+ * field by field so a second projection (driver, then upload) is stable and an
+ * unknown object can never be serialized into the artifact.
+ */
+function pickStartupDiagnostic(source) {
+  if (source === null || typeof source !== 'object') return null
+  const section = name => source[name] !== null && typeof source[name] === 'object' ? source[name] : {}
+  const data = section('data')
+  const powershell = data.powershell !== null && typeof data.powershell === 'object' ? data.powershell : {}
+  const npm = data.npm !== null && typeof data.npm === 'object' ? data.npm : {}
+  const candidate = data.candidate !== null && typeof data.candidate === 'object' ? data.candidate : {}
+  const cwd = data.cwd !== null && typeof data.cwd === 'object' ? data.cwd : {}
+  const start = data.start !== null && typeof data.start === 'object' ? data.start : {}
+  const error = start.error !== null && typeof start.error === 'object' ? start.error : null
+  const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : null
+  const job = section('job')
+  return {
+    protocol: source.protocol === 1 ? 1 : null,
+    phase: pickText(source, 'phase'),
+    tool: pickText(source, 'tool'),
+    result: pickText(source, 'result'),
+    attempted: pickBool(source, 'attempted'),
+    platform: source.platform === 'win32' ? 'win32' : null,
+    workdirClass: ['packages-app', 'workspace', 'other'].includes(source.workdirClass) ? source.workdirClass : null,
+    data: source.data === null || source.data === undefined ? null : {
+      powershell: { version: pickText(powershell, 'version'), edition: pickText(powershell, 'edition'),
+        dotnet: pickText(powershell, 'dotnet') },
+      npm: { type: pickText(npm, 'type'), shim: pickText(npm, 'shim'), rule: pickText(npm, 'rule'),
+        prefixLines: pickInt(npm, 'prefixLines') },
+      candidate: { basename: pickText(candidate, 'basename'), source: pickText(candidate, 'source'),
+        pathDigest: digest(memberOf(candidate, 'pathDigest')), matchesHostExecPath: pickBool(candidate, 'matchesHostExecPath'),
+        exists: pickBool(candidate, 'exists'), isFile: pickBool(candidate, 'isFile'),
+        readable: pickBool(candidate, 'readable') },
+      cwd: { expectedMatches: pickBool(cwd, 'expectedMatches'), accessible: pickBool(cwd, 'accessible') },
+      start: { attempted: pickBool(start, 'attempted'), started: pickBool(start, 'started'),
+        exitCode: pickInt(start, 'exitCode'), stdoutLength: pickInt(start, 'stdoutLength'),
+        stderrLength: pickInt(start, 'stderrLength'), timedOut: pickBool(start, 'timedOut'),
+        killed: pickBool(start, 'killed'), cleanupSettled: pickBool(start, 'cleanupSettled'),
+        skippedReason: pickText(start, 'skippedReason'),
+        error: error === null ? null : { win32: pickBool(error, 'win32'), type: pickText(error, 'type'),
+          nativeErrorCode: pickInt(error, 'nativeErrorCode'), hresult: pickInt(error, 'hresult'),
+          message: pickText(error, 'message', MAX_STARTUP_MESSAGE) } },
+    },
+    job: source.job === null || source.job === undefined ? null : {
+      promoted: pickBool(job, 'promoted'), killed: pickBool(job, 'killed'), waited: pickBool(job, 'waited'),
+      // The terminal fact must survive projection too: it is what justifies
+      // releasing job ownership.
+      terminal: pickBool(job, 'terminal'),
+    },
+    notes: Array.isArray(source.notes) ? source.notes.slice(0, 3)
+      .map(note => scrubDiagnosticText(note, MAX_BLOCK_TEXT)) : [],
+  }
+}
+
 /** Project one probe result or command record onto the upload allowlist. */
 export function diagnosticProjection(value) {
   const pick = (source, keys) => {
@@ -279,6 +355,9 @@ export function diagnosticProjection(value) {
   return {
     ...pick(record, ['passed', 'attemptDirectory', 'phase', 'ordinal', 'cleanupError', 'cleanupErrors', 'diagnosticFailures']),
     businessFailure: pickBusinessFailure(record.businessFailure),
+    // A sibling of the business snapshot, attributed to the phase by the driver
+    // exactly like it, so it is not duplicated at the document's top level.
+    startupDiagnostic: pickStartupDiagnostic(record.startupDiagnostic),
     error: record.error === undefined || record.error === null ? null
       : pick(record.error, ['name', 'message', 'code', 'infoCode']),
     returned: record.returned === undefined || record.returned === null ? null
@@ -387,6 +466,7 @@ export function createProbeEvidence(config) {
   // each layer, and the job-id pairs a promoted dispatch/collect is made of.
   let businessStage = null
   let frozenFailure = null
+  let startupDiagnostic = null
   const recentTools = []
   const recentNatives = []
   const jobIndex = new Map()
@@ -505,6 +585,12 @@ export function createProbeEvidence(config) {
       })
       return result
     },
+    /**
+     * Attach the bounded startup diagnostic the fixture produced for this failure.
+     * It travels beside the business snapshot, never inside it, so it can neither
+     * be read as the failure's native context nor change the run's outcome.
+     */
+    noteStartupDiagnostic(value) { startupDiagnostic = value ?? null },
     /** Fix the business stage the next calls belong to (a check name of the fixture). */
     setBusinessStage(stage) { businessStage = typeof stage === 'string' && stage.length > 0 ? stage : null },
     /**
@@ -557,6 +643,7 @@ export function createProbeEvidence(config) {
         // The frozen business context travels with the summary, so the uploaded
         // projection can name the stage and the calls that actually failed.
         ...frozenFailure === null ? {} : { businessFailure: frozenFailure },
+        ...startupDiagnostic === null ? {} : { startupDiagnostic },
         ...diagnosticFailures.length === 0 ? {} : { diagnosticFailures: [...diagnosticFailures] },
         ...cleanupErrors.length === 0 ? {} : { cleanupErrors: [...cleanupErrors] } }
       save('result.json', report)
