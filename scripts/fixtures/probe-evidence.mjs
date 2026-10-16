@@ -95,9 +95,30 @@ const RECENT_LIMIT = 6
 /** How many job-id relations are kept for dispatch/collect pairing. */
 const JOB_INDEX_LIMIT = 4
 
+/**
+ * Longest stderr kept: a bounded forensic budget rather than a claim about where
+ * any particular failure was. The first Windows artifact was captured with a 240
+ * character cap and arrived truncated, so the full text's length and the real
+ * root cause's position are unknown; 1024 keeps substantially more context while
+ * staying a small, bounded upload field. stdout keeps the smaller block size.
+ */
+const MAX_STDERR_TEXT = 1024
+
 /** Scrubbed, capped text; anything that is not a non-empty string stays null. */
 const boundedText = (value, limit = MAX_BLOCK_TEXT) =>
   typeof value === 'string' && value.trim().length > 0 ? scrubDiagnosticText(value, limit) : null
+
+/**
+ * One canonical Host stream as text: a bare string, or the `{ text }` shape the
+ * Host's canonical shell result uses. Anything else — including the whole
+ * object, its `spillPath` and its other metadata — is not text and stays null;
+ * the object is never serialized into the upload.
+ */
+function streamText(value) {
+  if (typeof value === 'string') return value
+  if (value !== null && typeof value === 'object' && typeof value.text === 'string') return value.text
+  return null
+}
 
 /** Allowlisted execution-receipt facts; an absent receipt is null, never a zero. */
 function receiptFacts(receipt) {
@@ -130,8 +151,8 @@ function nativeFacts(value) {
       denied: typeof sandbox.denied === 'boolean' ? sandbox.denied : null,
       runnerFailed: typeof sandbox.runnerFailed === 'boolean' ? sandbox.runnerFailed : null,
     },
-    stderr: boundedText(row.stderr),
-    stdout: boundedText(row.stdout),
+    stderr: boundedText(streamText(row.stderr), MAX_STDERR_TEXT),
+    stdout: boundedText(streamText(row.stdout), MAX_BLOCK_TEXT),
   }
 }
 
@@ -158,7 +179,9 @@ const PROJECTION_KEYS = {
   error: ['name', 'message', 'code', 'infoCode'],
   tool: ['ordinal', 'tool', 'callId', 'isError'],
   receipt: ['outcome', 'exitCode', 'executionMode', 'executorTool', 'jobId', 'nestedCallId'],
-  native: ['callId', 'parentCallId', 'kind', 'exitCode', 'signal', 'timedOut', 'aborted', 'stderr', 'stdout'],
+  // `stderr`/`stdout` are deliberately absent: they are free text with their own
+  // caps, and the generic string projection would cut them back to 120.
+  native: ['callId', 'parentCallId', 'kind', 'exitCode', 'signal', 'timedOut', 'aborted'],
   dispatch: ['ordinal', 'callId'],
 }
 
@@ -192,9 +215,15 @@ function pickSandbox(source) {
 function pickNative(source) {
   const row = pickScalars(source, PROJECTION_KEYS.native)
   if (row === null) return null
+  // Scrubbing is idempotent and the caps match the recorder's, so projecting an
+  // already-projected snapshot (driver pass, then upload pass) is stable.
   return { callId: row.callId, parentCallId: row.parentCallId, kind: row.kind, exitCode: row.exitCode,
     signal: row.signal, timedOut: row.timedOut, aborted: row.aborted, sandbox: pickSandbox(source?.sandbox),
-    stderr: row.stderr, stdout: row.stdout }
+    // Same normalization as the recorder, so a snapshot written by an older
+    // fixture (object streams, no text normalization) still projects to text
+    // instead of silently becoming null; the object itself is never serialized.
+    stderr: boundedText(streamText(source?.stderr), MAX_STDERR_TEXT),
+    stdout: boundedText(streamText(source?.stdout), MAX_BLOCK_TEXT) }
 }
 
 /**

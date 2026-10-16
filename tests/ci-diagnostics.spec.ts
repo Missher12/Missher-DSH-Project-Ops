@@ -77,6 +77,52 @@ test('the frozen business snapshot survives a second projection, sanitised and w
     jobId: 'bash-3', nestedCallId: 'call-3' })
 })
 
+test('canonical Host stream objects project to bounded text in both passes', () => {
+  // Longer than the cap even after scrubbing, so the exact-length assertion below
+  // proves the cap applied. The `|` separators stop the path replacement from
+  // swallowing the credential that follows it. The marker proves long text is
+  // kept; it makes no claim about where a real failure's cause sits.
+  const longTail = `${'a'.repeat(600)}${'b'.repeat(300)}LONG-TEXT-MARKER`
+    + ' | /home/fixture-user/projects/fixture-project/pwsh.log'
+    + ' | Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload'
+    + ` | ${'c'.repeat(400)}`
+  const base = {
+    stage: 'declared-workspace-execution', error: null, tool: null, receipt: null, value: null,
+    nestedContent: null, dispatch: null,
+    native: { callId: 'n1', parentCallId: 'c1', kind: 'completed', exitCode: 1, signal: null, timedOut: false,
+      aborted: null, sandbox: { denied: false, runnerFailed: null },
+      stderr: { text: longTail, truncated: true,
+        spillPath: '/home/fixture-user/projects/fixture-project/spill.txt' },
+      stdout: { text: 'o'.repeat(400), truncated: false } },
+  }
+  const once = diagnosticProjection({ passed: false, businessFailure: base })
+  const twice = diagnosticProjection(once)
+  // Idempotent across the driver pass and the upload pass.
+  expect(twice).toEqual(once)
+  const native = once.businessFailure.native
+  // Exactly the cap: the sample survives scrubbing above it.
+  expect(native.stderr.length).toBe(1024)
+  expect(native.stderr).toContain('LONG-TEXT-MARKER')
+  expect(native.stderr).toContain('[path]')
+  expect(native.stderr).toContain('[redacted]')
+  expect(native.stdout.length).toBeLessThanOrEqual(240)
+  const text = JSON.stringify(once)
+  expect(text).not.toContain('spillPath')
+  expect(text).not.toContain('spill.txt')
+  expect(text).not.toContain('/home/fixture-user')
+  // The credential was inside the kept window (it is well before the cap), so
+  // scrub-before-truncate is what keeps it out rather than the cap cutting it.
+  expect(text).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')
+
+  // Unknown shapes stay null, and a bare string keeps working unchanged.
+  const streamOf = (stderr: unknown, stdout: unknown) => diagnosticProjection({ passed: false,
+    businessFailure: { ...base, native: { ...base.native, stderr, stdout } } }).businessFailure.native
+  expect(streamOf({ truncated: true }, 42)).toMatchObject({ stderr: null, stdout: null })
+  expect(streamOf(null, null)).toMatchObject({ stderr: null, stdout: null })
+  expect(streamOf('plain string stderr', 'plain stdout')).toMatchObject({
+    stderr: 'plain string stderr', stdout: 'plain stdout' })
+})
+
 test('every credential shape and machine location is neutralised in the upload', () => {
   const document = ciDiagnosticDocument({
     passed: false,

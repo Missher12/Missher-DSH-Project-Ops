@@ -14,6 +14,22 @@ let native = { name: 'bash', async execute() {
     cwd: dirname(report), encoding: 'utf8', timeout: 5000,
   })
   if (child.error) throw child.error
+  // `object-stream` mode: the Host's canonical shell result reports each stream as
+  // `{ text, truncated, spillPath? }`. The long synthetic text only exercises the
+  // bounded forensic budget and the scrubbing order — it is NOT a claim that the
+  // real Windows root cause sits at any particular offset. The separator `|`
+  // keeps the path replacement from swallowing the credential that follows it,
+  // and the spill path must never reach the upload.
+  if (process.argv[3] === 'object-stream') {
+    const stderrText = `${'a'.repeat(600)}${'b'.repeat(300)}LONG-TEXT-MARKER`
+      + ' | /home/fixture-user/projects/fixture-project/private/pwsh.log'
+      + ' | Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload'
+      + ` | ${'c'.repeat(400)}`
+    return { exitCode: child.status, signal: child.signal,
+      stderr: { text: stderrText, truncated: true,
+        spillPath: '/home/fixture-user/projects/fixture-project/private/spill.txt' },
+      stdout: { text: 'o'.repeat(400), truncated: false } }
+  }
   return { exitCode: child.status, signal: child.signal, stderr: child.stderr }
 } }
 const scopedTools = { register(tool) { const previous = native; native = tool; return () => { native = previous } } }

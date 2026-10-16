@@ -88,6 +88,46 @@ test('the frozen business context reaches the final upload, not just the attempt
   expect(document.installed.businessFailure).toEqual(fixtureEvidenceFor(uploadDir, 'probe-installed').summary.businessFailure)
 }, 35000)
 
+test('the canonical Host stream shape keeps long stderr text up to its own cap', () => {
+  const report = join(directory, 'object-stream.json')
+  expect(execute(report, 'object-stream').status).toBe(1)
+  const fixture = JSON.parse(readFileSync(report, 'utf8'))
+  const frozenStderr = fixture.businessFailure.native.stderr
+  // The Host reports `{ text, truncated, spillPath? }`; the text is kept and the
+  // metadata is not. This synthetic sample is longer than the cap even after
+  // scrubbing, so an exact-length assertion proves the cap really applied rather
+  // than merely allowing a short string through.
+  expect(typeof frozenStderr).toBe('string')
+  expect(frozenStderr.length).toBe(1024)
+  // The marker exists only to prove long text survives; it is not a claim about
+  // where any real failure's cause sits.
+  expect(frozenStderr).toContain('LONG-TEXT-MARKER')
+  expect(fixture.businessFailure.native.stdout.length).toBeLessThanOrEqual(240)
+
+  const uploadDir = join(directory, 'object-stream-upload')
+  mkdirSync(uploadDir, { recursive: true })
+  writeFileSync(join(uploadDir, 'installed.json'), JSON.stringify(fixture))
+  const summary = fixtureEvidenceFor(uploadDir, 'probe-installed')
+  const document = uploadDocument({ passed: false, phase: 'probe-installed', evidence: summary,
+    facts: { phase: 'probe-installed' }, original: 'node failed' })
+  const native = document.installed.businessFailure.native
+  // The same text survives the driver projection and the upload projection, and
+  // the cap is still exactly the stderr budget.
+  expect(native.stderr).toBe(summary.summary.businessFailure.native.stderr)
+  expect(native.stderr.length).toBe(1024)
+  expect(native.stderr).toContain('LONG-TEXT-MARKER')
+  expect(native.stdout.length).toBeLessThanOrEqual(240)
+  // Scrubbing happens before the cap, so the boundary cannot leak either shape.
+  expect(native.stderr).not.toContain('/home/fixture-user')
+  expect(native.stderr).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9')
+  expect(native.stderr).toContain('[path]')
+  expect(native.stderr).toContain('[redacted]')
+  const uploaded = JSON.stringify(document)
+  expect(uploaded).not.toContain('spillPath')
+  expect(uploaded).not.toContain('spill.txt')
+  expect(uploaded).not.toContain('truncated')
+}, 35000)
+
 test('records a thrown native error before unwinding without fabricating exit information', () => {
   const report = join(directory, 'thrown.json')
   expect(execute(report, 'throw').status).toBe(1)
@@ -190,6 +230,18 @@ test('a throwing diagnostic accessor is recorded without changing the returned r
     async () => nativeValue)).toBe(nativeValue)
   expect(evidence.diagnosticFailures.some(row => row.includes('remember native call'))).toBe(true)
   expect(evidence.diagnosticFailures.some(row => row.includes('native accessor exploded'))).toBe(true)
+
+  // The canonical stream shape reads `.text`: when that accessor throws, the call
+  // still returns its own value and only a diagnostic failure is recorded.
+  const streamValue: Record<string, unknown> = { exitCode: 1 }
+  Object.defineProperty(streamValue, 'stderr', {
+    enumerable: true,
+    get() { return { get text() { throw new Error('stream accessor exploded') } } },
+  })
+  expect(await evidence.observe('native', { tool: 'bash', callId: 'call-guard-stream' },
+    async () => streamValue)).toBe(streamValue)
+  expect(evidence.diagnosticFailures.some(row => row.includes('remember native call'))).toBe(true)
+  expect(evidence.diagnosticFailures.some(row => row.includes('stream accessor exploded'))).toBe(true)
 })
 
 test('keeps actual zero and false values and preserves an earlier summary when a diagnostic passes', async () => {
