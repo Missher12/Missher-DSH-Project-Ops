@@ -137,7 +137,10 @@ test('the startup diagnostic projects as its own whitelist, twice, beside the bu
       start: { attempted: true, started: false, exitCode: null, stdoutLength: null, stderrLength: null,
         timedOut: null, killed: null, cleanupSettled: null, skippedReason: null,
         error: { win32: true, type: 'Win32Exception', nativeErrorCode: 5,
-          hresult: -2147467259, message: `denied at /home/fixture-user/projects/fixture-project/node.exe ${'m'.repeat(600)}` } },
+          hresult: -2147467259, message: `denied at /home/fixture-user/projects/fixture-project/node.exe ${'m'.repeat(600)}`,
+          site: { targetSite: 'CreatePipe',  unknownSiteField: 'must not survive',
+            processMethods: ['StartCore', 'CreatePipe', '/home/fixture-user/evil.dll', 'StartCore', 'Start',
+              'StartWithCreateProcess', { name: 'StartCore' }, 'StartCore'] } } },
     },
     job: { promoted: false, killed: null, waited: null },
   }
@@ -155,6 +158,20 @@ test('the startup diagnostic projects as its own whitelist, twice, beside the bu
   expect(diag.data.candidate).toMatchObject({ basename: 'node.exe', matchesHostExecPath: true, exists: true,
     isFile: true, readable: true })
   expect(diag.data.candidate.pathDigest).toBe('a'.repeat(64))
+  expect(diag.data.start.error.site).toEqual({ targetSite: 'CreatePipe',
+    processMethods: ['StartCore', 'CreatePipe', 'Start'] })
+  expect('unknownSiteField' in diag.data.start.error.site).toBe(false)
+
+  // Bounded scan counter-example: the first frame window yields only one usable
+  // name, so the valid ninth entry is never reached; and a target site that is an
+  // object rather than a name is null.
+  const bounded = diagnosticProjection({ startupDiagnostic: { protocol: 1, platform: 'win32',
+    workdirClass: 'other', data: { start: { error: { nativeErrorCode: 5,
+      site: { targetSite: { name: 'CreatePipe' },
+        processMethods: ['StartCore', 'StartCore', '/home/fixture-user/evil.dll', { name: 'CreatePipe' },
+          null, 7, 'StartCore', 'StartCore', 'CreatePipe'] } } } } } })
+  expect(bounded.startupDiagnostic.data.start.error.site).toEqual({ targetSite: null,
+    processMethods: ['StartCore'] })
   expect(diag.data.start.error).toMatchObject({ win32: true, type: 'Win32Exception', nativeErrorCode: 5,
     hresult: -2147467259 })
   // Scrub before the cap, and the message keeps its own larger bound.
@@ -170,6 +187,15 @@ test('the startup diagnostic projects as its own whitelist, twice, beside the bu
   expect(JSON.stringify(uploaded)).not.toContain('"unknown"')
   expect(JSON.stringify(uploaded)).not.toContain('/home/fixture-user')
   // Unknown shapes stay null rather than a fabricated value.
+  const noSite = diagnosticProjection({ startupDiagnostic: { protocol: 1, platform: 'win32', workdirClass: 'other',
+    data: { start: { error: { nativeErrorCode: 5, site: { targetSite: '/home/fixture-user/node.exe',
+      processMethods: 'StartCore' } } } } } })
+  // A non-whitelisted name, a non-array and an absent site all become null/empty.
+  expect(noSite.startupDiagnostic.data.start.error.site).toEqual({ targetSite: null, processMethods: [] })
+  const absent = diagnosticProjection({ startupDiagnostic: { protocol: 1, platform: 'win32', workdirClass: 'other',
+    data: { start: { error: { nativeErrorCode: 5 } } } } })
+  expect(absent.startupDiagnostic.data.start.error.site).toEqual({ targetSite: null, processMethods: [] })
+
   const empty = diagnosticProjection({ startupDiagnostic: { protocol: 2, platform: 'linux',
     workdirClass: 'somewhere', data: { candidate: { pathDigest: 'not-a-digest', exists: 'yes' } } } })
   expect(empty.startupDiagnostic.protocol).toBeNull()

@@ -104,7 +104,12 @@ const ctx = {
           start: { attempted: true, started: false, exitCode: null, stdoutLength: null, stderrLength: null,
             timedOut: false, killed: null, cleanupSettled: null, skippedReason: null,
             error: { win32: true, type: 'Win32Exception', nativeErrorCode: 5, hresult: -2147467259,
-              message: `denied at /home/fixture-user/projects/fixture-project/node.exe ${'m'.repeat(600)}` } } }
+              message: `denied at /home/fixture-user/projects/fixture-project/node.exe ${'m'.repeat(600)}`,
+              // The same exception's bounded throw site: an illegal name and a repeat are
+              // present on purpose, and must not survive the two projections.
+              site: { targetSite: 'CreatePipeWithSecurityAttributes',
+                processMethods: ['StartCore', 'CreatePipeWithSecurityAttributes', 'CreatePipe',
+                  'NotARealProcessMethod', 'StartCore', 'CreateExceptionForErrorStartingProcess'] } } } }
         const marker = 'PROJECT_OPS_STARTUP_DIAGNOSTIC='
         const line = mode === 'win-diag-badjson' ? `${marker}{not json`
           : mode === 'win-diag-oversize' ? `${marker}${'x'.repeat(9000)}`

@@ -4,7 +4,8 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { createProbeEvidence, runGuardedCleanup, scrubDiagnosticText, settleRun } from './probe-evidence.mjs'
+import { createProbeEvidence, runGuardedCleanup, scrubDiagnosticText, settleRun,
+  STARTUP_MAX_FRAMES, STARTUP_MAX_PROCESS_METHODS, STARTUP_PROCESS_METHODS } from './probe-evidence.mjs'
 
 /** Marker line the fixed startup probe emits; only this line is ever parsed. */
 const STARTUP_MARKER = 'PROJECT_OPS_STARTUP_DIAGNOSTIC='
@@ -14,6 +15,28 @@ const STARTUP_MAX_CHARS = 8192
 const STARTUP_SCAN_CHARS = 65536
 /** How many text sources are considered at all; the marker is expected in the first. */
 const STARTUP_MAX_SOURCES = 4
+/*
+ * The throw-site whitelist and its bounds come from the evidence module this probe
+ * already imports, so the dependency stays one-way: a name outside that list is
+ * dropped, and no name in it proves which call actually failed.
+ */
+
+/** One whitelisted process method name, or null: any other string is dropped, never rewritten. */
+const probeProcessMethod = value => typeof value === 'string' && STARTUP_PROCESS_METHODS.includes(value) ? value : null
+
+/** Bounded, de-duplicated whitelisted method names in the order the frames reported them. */
+const probeProcessMethods = value => {
+  if (!Array.isArray(value)) return []
+  const kept = []
+  // Only the first frames are considered: an arbitrarily long invalid array is
+  // never walked just to fill the cap.
+  for (const entry of value.slice(0, STARTUP_MAX_FRAMES)) {
+    if (kept.length >= STARTUP_MAX_PROCESS_METHODS) break
+    if (typeof entry !== 'string' || !STARTUP_PROCESS_METHODS.includes(entry)) continue
+    if (!kept.includes(entry)) kept.push(entry)
+  }
+  return kept
+}
 /** Bound on the whole diagnostic call (its own controller). */
 const STARTUP_TIMEOUT_MS = 20000
 /** Bound on waiting for a promoted diagnostic job to settle. */
@@ -50,6 +73,7 @@ function startupDiagnosticScript(execPathBase64, cwdBase64) {
     "$out.candidate = [ordered]@{ basename = $null; source = 'unknown'; pathDigest = $null; matchesHostExecPath = $null; exists = $null; isFile = $null; readable = $null }",
     "$out.cwd = [ordered]@{ expectedMatches = $null; accessible = $null }",
     "$out.start = [ordered]@{ attempted = $false; started = $null; exitCode = $null; stdoutLength = $null; stderrLength = $null; timedOut = $null; killed = $null; cleanupSettled = $null; skippedReason = $null; error = $null }",
+    `$methodAllow = @(${STARTUP_PROCESS_METHODS.map(name => `'${name}'`).join(', ')})`,
     "try {",
     "  $cwdNow = (Get-Location).Path",
     "  $out.cwd.accessible = [bool](Test-Path -LiteralPath $cwdNow)",
@@ -181,6 +205,31 @@ function startupDiagnosticScript(execPathBase64, cwdBase64) {
     "      $reported = if ($win32 -ne $null) { $win32.Message } else { $_.Exception.Message }",
     "      $reportedType = if ($win32 -ne $null) { 'Win32Exception' } else { $_.Exception.GetType().Name }",
     "      $out.start.error = [ordered]@{ win32 = [bool]($win32 -ne $null); type = [string]$reportedType; nativeErrorCode = $null; hresult = $null; message = [string]$reported }",
+    "      $siteException = if ($win32 -ne $null) { $win32 } else { $_.Exception }",
+    "      # Bounded throw-site facts for the SAME exception that is reported: a whitelisted",
+    "      # TargetSite name, then at most three whitelisted method names from GetFrame(i) on",
+    "      # the first frames. No raw stack trace, declaring type, path or arbitrary name is",
+    "      # read out, and these facts do not claim which call failed.",
+    "      $targetSite = $null",
+    "      $processMethods = @()",
+    "      try {",
+    "        $siteMethod = $siteException.TargetSite",
+    "        if ($siteMethod -ne $null -and $siteMethod.DeclaringType -ne $null -and [string]$siteMethod.DeclaringType.FullName -eq 'System.Diagnostics.Process') { $siteName = [string]$siteMethod.Name; if ($methodAllow -contains $siteName) { $targetSite = $siteName } }",
+    "      } catch { }",
+    "      try {",
+    "        $siteTrace = New-Object System.Diagnostics.StackTrace($siteException, $false)",
+    `        for ($i = 0; $i -lt ${STARTUP_MAX_FRAMES} -and $processMethods.Count -lt ${STARTUP_MAX_PROCESS_METHODS}; $i++) {`,
+    "          $siteFrame = $siteTrace.GetFrame($i)",
+    "          if ($siteFrame -eq $null) { continue }",
+    "          $siteFrameMethod = $siteFrame.GetMethod()",
+    "          if ($siteFrameMethod -eq $null) { continue }",
+    "          if ($siteFrameMethod.DeclaringType -eq $null -or [string]$siteFrameMethod.DeclaringType.FullName -ne 'System.Diagnostics.Process') { continue }",
+    "          $siteFrameName = [string]$siteFrameMethod.Name",
+    "          if ($methodAllow -contains $siteFrameName -and -not ($processMethods -contains $siteFrameName)) { $processMethods += $siteFrameName }",
+    "        }",
+    "        $siteTrace = $null",
+    "      } catch { }",
+    "      $out.start.error.site = [ordered]@{ targetSite = $targetSite; processMethods = @($processMethods) }",
     "      if ($win32 -ne $null) { $out.start.error.nativeErrorCode = [int]$win32.NativeErrorCode; $out.start.error.hresult = [int]$win32.HResult }",
     "    }",
     "    if ($started) {",
@@ -211,6 +260,31 @@ function startupDiagnosticScript(execPathBase64, cwdBase64) {
     "        $reported = if ($win32 -ne $null) { $win32.Message } else { $_.Exception.Message }",
     "        $reportedType = if ($win32 -ne $null) { 'Win32Exception' } else { $_.Exception.GetType().Name }",
     "        $out.start.error = [ordered]@{ win32 = [bool]($win32 -ne $null); type = [string]$reportedType; nativeErrorCode = $null; hresult = $null; message = [string]$reported }",
+    "        $siteException = if ($win32 -ne $null) { $win32 } else { $_.Exception }",
+    "        # Bounded throw-site facts for the SAME exception that is reported: a whitelisted",
+    "        # TargetSite name, then at most three whitelisted method names from GetFrame(i) on",
+    "        # the first frames. No raw stack trace, declaring type, path or arbitrary name is",
+    "        # read out, and these facts do not claim which call failed.",
+    "        $targetSite = $null",
+    "        $processMethods = @()",
+    "        try {",
+    "          $siteMethod = $siteException.TargetSite",
+    "          if ($siteMethod -ne $null -and $siteMethod.DeclaringType -ne $null -and [string]$siteMethod.DeclaringType.FullName -eq 'System.Diagnostics.Process') { $siteName = [string]$siteMethod.Name; if ($methodAllow -contains $siteName) { $targetSite = $siteName } }",
+    "        } catch { }",
+    "        try {",
+    "          $siteTrace = New-Object System.Diagnostics.StackTrace($siteException, $false)",
+    `          for ($i = 0; $i -lt ${STARTUP_MAX_FRAMES} -and $processMethods.Count -lt ${STARTUP_MAX_PROCESS_METHODS}; $i++) {`,
+    "            $siteFrame = $siteTrace.GetFrame($i)",
+    "            if ($siteFrame -eq $null) { continue }",
+    "            $siteFrameMethod = $siteFrame.GetMethod()",
+    "            if ($siteFrameMethod -eq $null) { continue }",
+    "            if ($siteFrameMethod.DeclaringType -eq $null -or [string]$siteFrameMethod.DeclaringType.FullName -ne 'System.Diagnostics.Process') { continue }",
+    "            $siteFrameName = [string]$siteFrameMethod.Name",
+    "            if ($methodAllow -contains $siteFrameName -and -not ($processMethods -contains $siteFrameName)) { $processMethods += $siteFrameName }",
+    "          }",
+    "          $siteTrace = $null",
+    "        } catch { }",
+    "        $out.start.error.site = [ordered]@{ targetSite = $targetSite; processMethods = @($processMethods) }",
     "        if ($win32 -ne $null) { $out.start.error.nativeErrorCode = [int]$win32.NativeErrorCode; $out.start.error.hresult = [int]$win32.HResult }",
     "      }",
     "      try { $out.start.cleanupSettled = [bool]$proc.WaitForExit(500) } catch { }",
@@ -239,6 +313,7 @@ function startupFacts(payload) {
   const cwd = section('cwd')
   const start = section('start')
   const error = start.error !== null && typeof start.error === 'object' ? start.error : null
+  const site = error !== null && error.site !== null && typeof error.site === 'object' ? error.site : {}
   const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : null
   return {
     powershell: { version: probeString(powershell.version), edition: probeString(powershell.edition),
@@ -254,7 +329,9 @@ function startupFacts(payload) {
       timedOut: probeBool(start.timedOut), killed: probeBool(start.killed), cleanupSettled: probeBool(start.cleanupSettled),
       error: error === null ? null : { win32: probeBool(error.win32), type: probeString(error.type),
         nativeErrorCode: probeInt(error.nativeErrorCode), hresult: probeInt(error.hresult),
-        message: probeString(error.message, 512) } },
+        message: probeString(error.message, 512),
+        // Throw-site facts of the reported exception; unknown values stay null/empty.
+        site: { targetSite: probeProcessMethod(site.targetSite), processMethods: probeProcessMethods(site.processMethods) } } },
   }
 }
 

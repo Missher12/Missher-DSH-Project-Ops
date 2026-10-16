@@ -169,6 +169,12 @@ test('the Windows startup diagnostic runs once, on the same agent and the failed
     matchesHostExecPath: true, exists: true, isFile: true, readable: true })
   expect(summary.startupDiagnostic.data.start.error).toMatchObject({ win32: true, type: 'Win32Exception',
     nativeErrorCode: 5 })
+  // The same mock error still reports code 5, and its bounded throw site survives
+  // both projection layers: illegal names and repeats are dropped, not fabricated.
+  expect(summary.startupDiagnostic.data.start.error.site).toEqual({
+    targetSite: 'CreatePipeWithSecurityAttributes',
+    processMethods: ['StartCore', 'CreatePipeWithSecurityAttributes', 'CreatePipe'],
+  })
 })
 
 test('diagnostic throw, promoted job and late job all keep the first failure and really clean up', () => {

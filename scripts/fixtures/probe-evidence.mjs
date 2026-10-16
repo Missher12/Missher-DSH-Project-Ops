@@ -2,6 +2,20 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+/**
+ * `System.Diagnostics.Process` method names a startup probe may report as a throw
+ * site, and their bounds. They live here because the probe fixture already imports
+ * this module: sharing them the other way would make the dependency cyclic.
+ */
+export const STARTUP_PROCESS_METHODS = [
+  'CreatePipeWithSecurityAttributes', 'CreatePipe', 'StartWithCreateProcess', 'StartCore', 'Start',
+  'CreateExceptionForErrorStartingProcess',
+]
+/** At most this many distinct process methods are reported. */
+export const STARTUP_MAX_PROCESS_METHODS = 3
+/** Frames the probe inspects one by one; projectors scan no more entries than this. */
+export const STARTUP_MAX_FRAMES = 8
+
 const unavailable = 'unavailable'
 const text = value => typeof value === 'string' ? value.slice(0, 2048) : unavailable
 const object = value => value !== null && typeof value === 'object' ? value : {}
@@ -269,6 +283,23 @@ const pickInt = (source, key) => {
   const value = memberOf(source, key)
   return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null
 }
+/** One whitelisted process method name, or null; anything else is dropped, never rewritten. */
+const pickProcessMethod = value => typeof value === 'string' && STARTUP_PROCESS_METHODS.includes(value) ? value : null
+
+/** Bounded, de-duplicated whitelisted method names in the order the probe reported them. */
+const pickProcessMethods = value => {
+  if (!Array.isArray(value)) return []
+  const kept = []
+  // Only the first frames are considered: an arbitrarily long invalid array is
+  // never walked just to fill the cap.
+  for (const entry of value.slice(0, STARTUP_MAX_FRAMES)) {
+    if (kept.length >= STARTUP_MAX_PROCESS_METHODS) break
+    if (typeof entry !== 'string' || !STARTUP_PROCESS_METHODS.includes(entry)) continue
+    if (!kept.includes(entry)) kept.push(entry)
+  }
+  return kept
+}
+
 /** A scrubbed, capped string, or null. */
 const pickText = (source, key, limit = MAX_STRING) => {
   const value = memberOf(source, key)
@@ -295,6 +326,7 @@ function pickStartupDiagnostic(source) {
   const cwd = data.cwd !== null && typeof data.cwd === 'object' ? data.cwd : {}
   const start = data.start !== null && typeof data.start === 'object' ? data.start : {}
   const error = start.error !== null && typeof start.error === 'object' ? start.error : null
+  const site = memberOf(error, 'site')
   const digest = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value) ? value : null
   const job = section('job')
   return {
@@ -322,7 +354,10 @@ function pickStartupDiagnostic(source) {
         skippedReason: pickText(start, 'skippedReason'),
         error: error === null ? null : { win32: pickBool(error, 'win32'), type: pickText(error, 'type'),
           nativeErrorCode: pickInt(error, 'nativeErrorCode'), hresult: pickInt(error, 'hresult'),
-          message: pickText(error, 'message', MAX_STARTUP_MESSAGE) } },
+          message: pickText(error, 'message', MAX_STARTUP_MESSAGE),
+          // Throw-site facts of the reported exception; unknown values stay null/empty.
+          site: { targetSite: pickProcessMethod(memberOf(site, 'targetSite')),
+            processMethods: pickProcessMethods(memberOf(site, 'processMethods')) } } },
     },
     job: source.job === null || source.job === undefined ? null : {
       promoted: pickBool(job, 'promoted'), killed: pickBool(job, 'killed'), waited: pickBool(job, 'waited'),
