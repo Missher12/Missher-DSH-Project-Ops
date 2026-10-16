@@ -1,6 +1,8 @@
 # Project Ops 安装
 
-包名 `@missher/dsh-project-ops`。从[最新正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/latest)下载插件 `.tgz` 和同次发布的 `SHA256SUMS`。当前正式包是 `missher-dsh-project-ops-0.4.0-alpha.2.tgz`；以后更新优先查看 Latest，固定包名用于识别已验归档，不表示只能搭配某一版宿主。当前包的依赖声明、已测接口和原生平台限制见 [README](README.md#宿主兼容) 与 [PUBLICATION](PUBLICATION.md)。
+包名 `@missher/dsh-project-ops`，当前源码版本 **0.4.0**，面向 DeepSeek Harness 0.2 系列的多个宿主版本（已核验环境与最低接口见 [兼容性矩阵](docs/COMPATIBILITY.md)），不要求某个精确的 Host 版本。
+
+安装前以你实际取得的包为准核对摘要：`sha256sum <tgz>` 与交付记录中的 SHA-256 一致，并确认该包来自你信任的交付位置。随包交付记录见 [交付记录](docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/READY.md)；版本、环境与尚未验证项以该记录及其后续更新为准。界面与已核验环境见 [兼容性矩阵](docs/COMPATIBILITY.md)。
 
 获准集成时通过目标桌面匹配的 `dsh plugin --profile <目标profile> add <已核验tgz>` 安装。旧无 scope 包 `dsh-project-ops` 如已存在，先记录其准确版本和 Bundle 状态，再通过正式插件管理入口移除旧 Bundle，避免同时加载同名服务；保留全部项目文档与会话数据。不得用另一宿主的 CLI 或覆盖 profile 目录代替安装。
 

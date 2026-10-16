@@ -6,19 +6,23 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inspectArchive } from './package-inspection.mjs'
-import { createHostResolver } from './selected-host.mjs'
+import { createHostResolver, describeHost } from './selected-host.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const hostRoot = process.env.PROJECT_OPS_HOST_ROOT ? resolve(process.env.PROJECT_OPS_HOST_ROOT) : undefined
 const host = createHostResolver(hostRoot ?? root)
+// Resolve one peer before touching the archive: a selected Host that is not a
+// real installation must fail as a Host problem, not as an archive problem.
+host.resolvePackage('@deepseek-ai/cordis')
 assert(process.env.PROJECT_OPS_ARCHIVE, 'set PROJECT_OPS_ARCHIVE to the fixed candidate tgz')
 assert(process.env.PROJECT_OPS_ARCHIVE_SHA256, 'set PROJECT_OPS_ARCHIVE_SHA256')
 const archive = resolve(process.env.PROJECT_OPS_ARCHIVE)
-host.resolvePackage('@deepseek-ai/cordis', '4.0.5-alpha.1')
+// Peers are published as ranges now, so the resolver records the version the
+// selected Host really installed instead of asserting an equality against a range.
 const inspected = inspectArchive(archive, process.env.PROJECT_OPS_ARCHIVE_SHA256)
 const peerTypes = Object.fromEntries(Object.keys(inspected.manifest.peerDependencies).filter(name => name !== 'react').map(name => {
-  const { manifestPath, manifest } = host.resolvePackage(name, inspected.manifest.peerDependencies[name])
+  const { manifestPath, manifest } = host.resolvePackage(name)
   const types = manifest.exports?.['.']?.types ?? manifest.types
   assert.equal(typeof types, 'string', `missing peer declaration entry: ${name}`)
   return [name, [resolve(dirname(manifestPath), types)]]
@@ -61,7 +65,8 @@ execFileSync(process.execPath, [compiler, '-p', join(directory, 'tsconfig.json')
 const report = { passed: true, archive, archiveSha256: inspected.sha256, archiveBytes: inspected.bytes,
   source: 'declarations copied from the checked tgz, no source path alias', compiler,
   compilerVersion: JSON.parse(readFileSync(require.resolve('typescript/package.json'), 'utf8')).version,
-  strict: true, skipLibCheck: false, node: process.version, hostRoot: hostRoot ?? null, hostInstallation: host.installation, peerTypes,
+  strict: true, skipLibCheck: false, node: process.version, hostRoot: hostRoot ?? null,
+  host: describeHost(host), peerTypes,
   entryHashes: Object.fromEntries(['index', 'cordis', 'client/index'].map(name => [name, createHash('sha256').update(inspected.files.get(`package/lib/${name}.d.ts`)).digest('hex')])) }
 const reportPath = join(directory, 'report.json')
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n')

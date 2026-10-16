@@ -1,49 +1,96 @@
 {
-  "version": "0.4.0-alpha.2",
-  "date": "2026-10-12",
-  "scope": "Accepted source and exact frozen runtime; Ubuntu daily installation verified separately; no GitHub Release or Intel Mac acceptance implied",
-  "sourceBase": "44fc988f511f1d16f6b8ff29de03dacdc36aa58c",
-  "sourceArchiveSha256": "f427bb4cc1f422755236b31df264c75ddc14c4c723cb315f29fffb07a693aee6",
-  "sourceManifestSha256": "7690e25c14007d602c339101165caef1590f0231a1465da028a16d81dae45760",
-  "frozenPackageSha256": "1d58e94f06c2f9f08faea45dfac141fe770ecc61343c179cda60668f5421b558",
-  "frozenPackageBytes": 63464,
-  "frozenPackageMembers": 18,
+  "version": "0.4.0",
+  "date": "2026-10-17",
+  "scope": "Accepted source and matching frozen package; Git/Release/install are separate evidence layers",
+  "frozenPackageSha256": "c48e2895dd077421470ba5866e86016432201788fc222bcf4b1b15b6b7bd94ce",
+  "frozenPackageBytes": 249145,
+  "frozenPackageMembers": 24,
   "runtimeFiles": {
-    "lib/agent-guidance-BQfg25Bc.js": "62af8da2dcb496613045b3564800927daeea2950e34819e839956bab98bf3f21",
-    "lib/browser/client.js": "e82b2cedc4203dc284f410349a642ce384b073009b4035e32339e1e0795d5de6",
-    "lib/cordis.js": "5cec363798af4549972231019178f3ad9902ffb293d1eb2047e0d0cf957f18b8",
-    "lib/client/index.js": "5abd4fbd21d907d61e9c106c21367c91de1dc2f4e1c2cc9d49749d3cd0c366db",
-    "lib/index.js": "d9f71223c77a64dc90e65ea2762363818b56f02db9530573182bb76392c29d8a",
-    "lib/cordis.d.ts": "700c02cd3830f15ea6e4a28dc3e186b8acd125d076168093a1c372caf2942cc4",
-    "lib/client/index.d.ts": "00a4c29391b52f325ed9797370fc86bb5a8b772b3b18146c5eeaf114c482d4ed",
-    "lib/index.d.ts": "a44dda01fbea22f6246320dfd625a1dc1569be7771fc46aff05c00cf381aed20"
+    "lib/agent-guidance-BPcgrhgZ.js": "cf204f5fb40d6ad9323f3c1a54a3593e3a2a4ce6ae9335ae51c21252193ef5d9",
+    "lib/browser/client.js": "f949d65e936df2694d6aa8e7c2e61aa695d96a1bac194582cb7a207bca3b55ab",
+    "lib/cordis.js": "dd68e49d2778494939911827885cdf65b99a06d53099d9cfa04a54bee20b6882",
+    "lib/client/index.js": "0eca8ad514b66a6fb808b46178fc409c528316146b5974bb50f68cc93af00d18",
+    "lib/index.js": "85eb041b8271dc5607e9fd7394ad90fd2852859e494a7d8078ef5fee23901e26",
+    "lib/cordis.d.ts": "7cb0a7b7c1277f0caa43408b7bbf3cfc3b4321964861dce402c02eed8cbeb49a",
+    "lib/client/index.d.ts": "aa9f35b8129176491c6f67b342d71bead7e74c3dafe5986be96edadeaaceae8f",
+    "lib/index.d.ts": "36adfa8ad896593fdfd884d2768b355322c9b7aa9eda591eb63312eec94ea5d7"
   },
   "validation": {
     "typecheck": true,
-    "tests": 112,
-    "declarationConsumer": true,
-    "hostUiContract": true,
-    "officialIsolatedWeb": "light/dark, four states, disabled missing READY, PLAN/READY previews, keyboard and focus return, outside close, narrow layout, scrolling; zero console errors",
-    "dailyUbuntu": "18 exact installed members, active after restart, visible trigger/empty/populated task panels; 55 session logs and user/effective settings preserved"
+    "targetedInitial": "7 files / 53 tests",
+    "afterP0Repair": "3 files / 13 tests including7realCordis client tests",
+    "declarationConsumer": "strict skipLibCheck=false; pinned SDK; exact archived declarations unchanged",
+    "profileHosts": [
+      "community rc.2",
+      "community alpha.2",
+      "official npm alpha.5"
+    ],
+    "ui": "official npm alpha.5 Web: light/dark1280x720 and390x844, PLAN/READY preview, focus/outside/refresh, consoleerrors0",
+    "resources": "sequential bounded scopes; see result JSON"
   },
+  "unverified": [
+    "Electron native",
+    "Intel Mac",
+    "real model workflow",
+    "daily installation"
+  ],
   "publicExportAdjustments": {
     "files": [
       "HANDOVER.md",
-      "INSTALL.md",
       "PROJECT_CONTEXT.md",
-      "README.i18n.yaml",
-      "README.md",
-      "README.zh.md",
-      "docs/tasks/2026-10-12-task-documents-44fc988/READY.md"
+      "docs/tasks/2026-10-12-task-documents-44fc988/READY.md",
+      "docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/PLAN.md",
+      "docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/READY.md"
     ],
-    "reason": "Preserved three existing personal-path placeholders, updated publication state in README pair and INSTALL, refreshed README hashes; no product-code changes"
+    "reason": "Preserve prior personal-path redaction, separate current delivery index from historical handovers, publish concise task summaries without private authoring metadata; all package members unchanged"
   },
-  "limitations": [
-    "No GitHub Release created",
-    "Intel Mac native not verified",
-    "Narrow declarations checked against target Host; dependency installation blocked in native sandbox",
-    "Read cancellation and four-way concurrency not stress-tested",
-    "Own native task receipt gate remains stale; independent checks do not replace native gate"
-  ],
-  "deliveryDiffCheckWarning": "Frozen source src/receipt-schema.ts:24 contains a final blank line retained from prior delivery; no production edit or hook bypass."
+  "previousDelivery": {
+    "version": "0.4.0-alpha.2",
+    "date": "2026-10-12",
+    "scope": "Accepted source and exact frozen runtime; Ubuntu daily installation verified separately; no GitHub Release or Intel Mac acceptance implied",
+    "sourceBase": "44fc988f511f1d16f6b8ff29de03dacdc36aa58c",
+    "sourceArchiveSha256": "f427bb4cc1f422755236b31df264c75ddc14c4c723cb315f29fffb07a693aee6",
+    "sourceManifestSha256": "7690e25c14007d602c339101165caef1590f0231a1465da028a16d81dae45760",
+    "frozenPackageSha256": "1d58e94f06c2f9f08faea45dfac141fe770ecc61343c179cda60668f5421b558",
+    "frozenPackageBytes": 63464,
+    "frozenPackageMembers": 18,
+    "runtimeFiles": {
+      "lib/agent-guidance-BQfg25Bc.js": "62af8da2dcb496613045b3564800927daeea2950e34819e839956bab98bf3f21",
+      "lib/browser/client.js": "e82b2cedc4203dc284f410349a642ce384b073009b4035e32339e1e0795d5de6",
+      "lib/cordis.js": "5cec363798af4549972231019178f3ad9902ffb293d1eb2047e0d0cf957f18b8",
+      "lib/client/index.js": "5abd4fbd21d907d61e9c106c21367c91de1dc2f4e1c2cc9d49749d3cd0c366db",
+      "lib/index.js": "d9f71223c77a64dc90e65ea2762363818b56f02db9530573182bb76392c29d8a",
+      "lib/cordis.d.ts": "700c02cd3830f15ea6e4a28dc3e186b8acd125d076168093a1c372caf2942cc4",
+      "lib/client/index.d.ts": "00a4c29391b52f325ed9797370fc86bb5a8b772b3b18146c5eeaf114c482d4ed",
+      "lib/index.d.ts": "a44dda01fbea22f6246320dfd625a1dc1569be7771fc46aff05c00cf381aed20"
+    },
+    "validation": {
+      "typecheck": true,
+      "tests": 112,
+      "declarationConsumer": true,
+      "hostUiContract": true,
+      "officialIsolatedWeb": "light/dark, four states, disabled missing READY, PLAN/READY previews, keyboard and focus return, outside close, narrow layout, scrolling; zero console errors",
+      "dailyUbuntu": "18 exact installed members, active after restart, visible trigger/empty/populated task panels; 55 session logs and user/effective settings preserved"
+    },
+    "publicExportAdjustments": {
+      "files": [
+        "HANDOVER.md",
+        "INSTALL.md",
+        "PROJECT_CONTEXT.md",
+        "README.i18n.yaml",
+        "README.md",
+        "README.zh.md",
+        "docs/tasks/2026-10-12-task-documents-44fc988/READY.md"
+      ],
+      "reason": "Preserved three existing personal-path placeholders, updated publication state in README pair and INSTALL, refreshed README hashes; no product-code changes"
+    },
+    "limitations": [
+      "No GitHub Release created",
+      "Intel Mac native not verified",
+      "Narrow declarations checked against target Host; dependency installation blocked in native sandbox",
+      "Read cancellation and four-way concurrency not stress-tested",
+      "Own native task receipt gate remains stale; independent checks do not replace native gate"
+    ],
+    "deliveryDiffCheckWarning": "Frozen source src/receipt-schema.ts:24 contains a final blank line retained from prior delivery; no production edit or hook bypass."
+  }
 }

@@ -147,6 +147,8 @@ interface HostCapabilities {
   foreground: boolean;
   background: boolean;
   cancellation: boolean;
+  /** Precise reasons for anything this Host cannot do; empty when nothing is degraded. */
+  notes?: string[];
 }
 /** Trusted host bridge. All execution must retain native owner, policy, sandbox and cancellation context. */
 interface ProjectOpsHost<Call = unknown> {
@@ -195,9 +197,26 @@ declare class ProjectOpsService<Call = unknown> {
     matches: CapabilityMatch[];
   }>;
   doctor(call: Call): Promise<{
+    scope: "available";
+    sourceSnapshot: boolean;
     executionAdapter: boolean;
     collectionAdapter: boolean;
+    runnerDependencies: string;
+    guidance: string;
+    host: string;
+    version: string;
+    foreground: boolean;
+    background: boolean;
+    cancellation: boolean;
+    /** Precise reasons for anything this Host cannot do; empty when nothing is degraded. */
+    notes?: string[];
+    apiVersion: number;
+  } | {
+    scope: "unavailable";
     sourceSnapshot: boolean;
+    notes: string[];
+    executionAdapter: boolean;
+    collectionAdapter: boolean;
     runnerDependencies: string;
     guidance: string;
     host: string;

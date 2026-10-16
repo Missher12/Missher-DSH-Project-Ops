@@ -1,3 +1,9 @@
+# Project Ops 0.4.0 交付索引（2026-10-17）
+
+当前公开版本、包摘要与验收范围见 [PUBLICATION.md](PUBLICATION.md) 和 [GIT_DELIVERY.json](GIT_DELIVERY.json)。下文为开发时的历史交接，不代表当前发布或本机安装状态。
+
+---
+
 # Project Ops 当前上下文（2026-10-12）
 
 当前唯一业务源码：本恢复仓库；Git 基线 44fc988f511f1d16f6b8ff29de03dacdc36aa58c，候选 @missher/dsh-project-ops 0.4.0-alpha.1，官方 npm Host 0.2.1-alpha.2 / Cordis 4.0.5-alpha.1。主显示名 Project Ops。新增 PLAN/READY 文档与原生客户端入口，保留原七工具。
@@ -70,7 +76,7 @@
 ## 2026-09-06 历史维护基线与数据流（0.2.x）
 
 - 原始独立仓库：`Missher12/dsh-project-ops`，main 基线 `f6f7d0117bf448c50b945afbf499e7bcac04ba9c`，开始时干净，无仓库内 AGENTS.md；遵循用户会话指令。
-- 隔离工作树：`<project-worktree>/dsh-project-ops-maintenance`；分支 `codex/project-ops-stability-20260906`。其他策略工作树保持原状。
+- 隔离工作树：`<project-worktree>-maintenance`；分支 `codex/project-ops-stability-20260906`。其他策略工作树保持原状。
 - 执行链：有界发现与上下文指纹 → 包影响闭包与同用途拓扑 → 新鲜度/完整性校验 → Agent 可见原生 shell（parent/rootCallId/signal 不变）→ 原生 Jobs → 分派关联校验 → 输出无关回执 → 重算门禁。
 - `manifestDigest` 字段保持兼容形状，含义扩展；旧摘要会失效，须重新发现/规划/执行。摘要覆盖全部发现清单、根 lockfile、.npmrc、.yarnrc.yml、tsconfig.json、turbo.json、nx.json 和调用信息。每个文件限 1 MiB，不递归读取配置引用。
 - 收集绑定仅在插件激活期间存在，最多 4096 次后台启动；不维护 job 状态、不调度、不启动自有定时器。重载后用原生 job_output/job_kill 处理旧 job，不能伪造恢复插件回执。
@@ -104,3 +110,11 @@
 R7 局部复审修正：ecedc69 的 createRequire 会向祖先搜索依赖，缺失/空显式宿主未被拒绝。两个消费入口现共用 selected-host.mjs，验证真实项目与安装目录，仅从显式包链接读取准确名称/版本，并记录逻辑及实际路径。修复前 6 个拒绝用例失败；修复后宿主选择 10 项加归档 3 项通过。pnpm 真实包链接投影的严格声明通过；原 71 项产品测试与包字节未受影响。Profile 复验细节及首次失败记录保留在 HANDOVER.md。
 
 最终组合诊断准备：Profile 每次激活创建独立 attempt，原生/工具返回和错误在关键断言前落盘，缺失事实明确 unavailable，首次 installed.json/removed.json 仅允许首次创建。driver 在启动前记录宿主身份，CLI 退出信息与任务信息分开。3 项 instrumentation 加 10 项 selected-host 定向验证通过；此轮没有再跑完整 Profile 或 71 项产品测试。产品包不变，vilN8t 原因仍未知，最终组合须验证同一首个前台任务。
+
+## 0.4.0（宽宿主兼容与界面修订，2026-10-17）
+
+- 源码版本 0.4.0；peer 从精确锁定改为有证据的范围（`>=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2`，Cordis `^4.0.4 || ^4.0.5-alpha.1`），开发 SDK 仍精确定版。
+- 判据从版本号改为能力：必需服务/方法缺失时指名报错并说明激活差异，可选服务（Jobs 后台与收集、shell 后台参数、客户端 workspaceFiles 与原生预览）缺失时只关闭对应功能。
+- 已核验三个真实宿主（社区 rc.2、社区 alpha.2、官方 npm alpha.5）的安装/运行/卸载验收：固定候选包在各自独立 HOME/DSH_HOME 的合成工作区完成安装 → 运行 → 卸载，14 项行为检查通过；官方 alpha.5 Web 侧另行完成四状态、两个原生预览、亮/暗与窄宽、键盘与关闭行为验收。
+- 界面改为 DSH 原生两行任务行（13px 标题、12px secondary 短状态、行内轻量方案/交付入口），配图见 `docs/images/task-panel-0.4.0.jpg` 与 `plan-preview-0.4.0.jpg`。
+- 尚未完成：加入公开配图后的最终打包与摘要、Git 根/Release/桌面安装、Electron 与 Intel Mac 原生交互、真实模型自主轨迹。

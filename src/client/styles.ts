@@ -34,7 +34,6 @@ export const styles = {
   headerCount: 'po-header-count',
   iconButton: 'po-icon-button',
   spin: 'po-spin',
-  hint: 'po-hint',
   notice: 'po-notice',
   noticeError: 'po-notice-error',
   noticeAction: 'po-notice-action',
@@ -45,13 +44,14 @@ export const styles = {
   row: 'po-row',
   rowDot: 'po-row-dot',
   rowMain: 'po-row-main',
-  rowPrimary: 'po-row-primary',
   rowTitle: 'po-row-title',
   rowId: 'po-row-id',
+  rowMeta: 'po-row-meta',
   rowStatus: 'po-row-status',
-  rowStatusWarn: 'po-row-status-warn',
   rowActions: 'po-row-actions',
   action: 'po-action',
+  actionIcon: 'po-action-icon',
+  footer: 'po-footer',
 } as const
 
 /** Every class name the sheet must define. */

@@ -6,12 +6,16 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { inspectArchive } from './package-inspection.mjs'
-import { createHostResolver } from './selected-host.mjs'
+import { createHostResolver, describeHost } from './selected-host.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRoot = process.env.PROJECT_OPS_HOST_ROOT ? resolve(process.env.PROJECT_OPS_HOST_ROOT) : undefined
 const host = createHostResolver(hostRoot ?? root)
-const { manifestPath: dshManifestPath, manifest: dshManifest } = host.resolvePackage('@deepseek-ai/dsh', '0.2.1-alpha.2')
+// The SDK version is read from the selected Host, not pinned here: the same
+// script must run against the community rc.2 / alpha.2 roots and the official
+// npm alpha line. Set PROJECT_OPS_HOST_VERSION to demand one exact version.
+const pinnedVersion = process.env.PROJECT_OPS_HOST_VERSION
+const { manifestPath: dshManifestPath, manifest: dshManifest } = host.resolvePackage('@deepseek-ai/dsh', pinnedVersion)
 const cli = join(dirname(dshManifestPath), 'lib/bin.js')
 const nodeBinary = process.env.PROJECT_OPS_NODE ? resolve(process.env.PROJECT_OPS_NODE) : process.execPath
 const overlay = process.env.PROJECT_OPS_EXTRA_PATCH ? resolve(process.env.PROJECT_OPS_EXTRA_PATCH) : undefined
@@ -58,7 +62,7 @@ try {
   }
   const inspected = inspectArchive(archive, process.env.PROJECT_OPS_ARCHIVE_SHA256)
   const archiveSha256 = inspected.sha256
-  const hostEvidence = { installation: host.installation, cli, cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),
+  const hostEvidence = { host: describeHost(host), cli, cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),
     selectedNode: nodeBinary, archive, archiveSha256,
     extraPatch: overlay ? { path: overlay, sha256: createHash('sha256').update(readFileSync(overlay)).digest('hex') } : null }
   writeFileSync(join(directory, 'selected-runtime.json'), JSON.stringify(hostEvidence, null, 2) + '\n', { flag: 'wx' })
@@ -102,9 +106,18 @@ try {
   const removed = JSON.parse(readFileSync(join(directory, 'removed.json'), 'utf8'))
   assert.equal(removed.passed, true)
   assert.equal(sentinel(), before)
-  const report = { passed: true, officialVersion: dshManifest.version,
-    officialReferenceSha: 'd743267388641bc76f17c45ce8b4c231aed1d32c',
-    runtimeSource: hostRoot ? 'Explicit caller-supplied runtime; package version is not source-SHA attestation' : 'Exact public npm packages from this checkout lockfile',
+  const referenceSha = process.env.PROJECT_OPS_HOST_REFERENCE_SHA ?? null
+  const report = { passed: true, hostVersion: dshManifest.version,
+    // Only a caller-supplied, already-verified reference may carry a commit id.
+    // Reusing one release's commit for a different target would misattribute it,
+    // so an unverified source records null instead.
+    officialReferenceSha: referenceSha,
+    referenceSource: referenceSha === null
+      ? 'null: no verified commit id for this target in this run'
+      : 'caller-supplied verified reference via PROJECT_OPS_HOST_REFERENCE_SHA',
+    runtimeSource: host.installation.source === 'custom'
+      ? 'Explicit caller-supplied runtime; package version is not source-SHA attestation'
+      : `${host.installation.source} packaging selected by its own root; package version is not source-SHA attestation`,
     hostRoot: hostRoot ?? null, hostInstallation: host.installation, nodeBinary, cli,
     extraPatch: overlay ? { path: overlay, sha256: createHash('sha256').update(readFileSync(overlay)).digest('hex') } : null,
     cliSha256: createHash('sha256').update(readFileSync(cli)).digest('hex'),

@@ -1,6 +1,6 @@
 {
   "name": "@missher/dsh-project-ops",
-  "version": "0.4.0-alpha.2",
+  "version": "0.4.0",
   "description": "Project Ops：项目开发方案、交付记录与原生任务验证",
   "private": false,
   "type": "module",
@@ -32,16 +32,20 @@
     "docs/OFFICIAL_COMPAT.md",
     "README.i18n.yaml",
     "LICENSE",
-    "docs/TASK_DOCUMENTS.md"
+    "docs/TASK_DOCUMENTS.md",
+    "docs/COMPATIBILITY.md",
+    "docs/images"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:ui": "node scripts/check-ui-contract.mjs",
+    "check:peers": "node scripts/check-peer-ranges.mjs",
+    "check:surface": "node scripts/check-host-surface.mjs",
     "smoke:package": "node scripts/smoke.mjs",
     "smoke:clean": "node scripts/smoke-clean.mjs",
-    "smoke:profile": "node scripts/smoke-profile.mjs",
-    "check:ui": "node scripts/check-ui-contract.mjs"
+    "smoke:profile": "node scripts/smoke-profile.mjs"
   },
   "license": "MIT",
   "repository": {
@@ -65,20 +69,19 @@
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-api-workspace-files",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-locale"
       ],
       "platform": "web"
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.1",
-    "@deepseek-ai/dsh-agent": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-fs": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-jobs": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
-    "@deepseek-ai/dsh-util-values": "0.2.1-alpha.2",
+    "@deepseek-ai/cordis": "^4.0.4 || ^4.0.5-alpha.1",
+    "@deepseek-ai/dsh-agent": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
+    "@deepseek-ai/dsh-jobs": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
+    "@deepseek-ai/dsh-util-values": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {

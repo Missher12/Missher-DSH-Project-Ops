@@ -16,12 +16,17 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import { ProjectOpsPanel, ProjectOpsTrigger } from './ProjectOpsPanel.tsx'
+import { ProjectOpsPanel, ProjectOpsTrigger, type PanelAvailability } from './ProjectOpsPanel.tsx'
 import { styles } from './styles.ts'
 import type { TaskListResult } from './task-view.ts'
 
 /** Registration-side business face: one bounded read and the native preview opener. */
 export interface Face {
+  /**
+   * Optional native capabilities observed on this Host, evaluated per render so
+   * a service that appears later is picked up without reloading the plugin.
+   */
+  surface: () => { list: boolean; preview: boolean }
   /** Read this session's `docs/tasks` listing, abortable by the caller. */
   list: (signal: AbortSignal) => Promise<TaskListResult>
   /** Open one document in the native right-sidebar file preview. */
@@ -48,12 +53,16 @@ const FOCUSABLE = 'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"
  * @param props - locale seat, session id, and the injected read/preview face.
  * @returns the trigger plus, while open, the portaled panel.
  */
-export function ProjectOpsAction({ t, list, open, sessionId }: ProjectOpsActionProps) {
+export function ProjectOpsAction({ t, surface, list, open, sessionId }: ProjectOpsActionProps) {
   const [expanded, setExpanded] = useState(false)
   const [reload, setReload] = useState(0)
   const [result, setResult] = useState<TaskListResult>()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  // Observed per render: a Host that adds or drops an optional service changes
+  // only the affected half of the panel, never the plugin's activation.
+  const availability: PanelAvailability = surface()
+  const canList = availability.list
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLElement>(null)
@@ -62,6 +71,14 @@ export function ProjectOpsAction({ t, list, open, sessionId }: ProjectOpsActionP
   // request, so a refresh can never race its predecessor into the panel.
   useEffect(() => {
     if (!expanded) return
+    // Without the workspace-files remote there is nothing to read: the panel
+    // renders the capability notice instead of a read that cannot succeed.
+    if (!canList) {
+      setResult(undefined)
+      setError(undefined)
+      setBusy(false)
+      return
+    }
     const controller = new AbortController()
     setBusy(true)
     setResult(undefined)
@@ -75,7 +92,7 @@ export function ProjectOpsAction({ t, list, open, sessionId }: ProjectOpsActionP
       },
     )
     return () => { controller.abort() }
-  }, [expanded, reload, sessionId, list])
+  }, [expanded, reload, canList, sessionId, list])
 
   const position = useAnchoredPosition({
     open: expanded, anchorRef: rootRef, panelRef, gap: MENU_GAP, margin: VIEWPORT_MARGIN,
@@ -140,6 +157,7 @@ export function ProjectOpsAction({ t, list, open, sessionId }: ProjectOpsActionP
             result={result}
             error={error}
             busy={busy}
+            availability={availability}
             onRefresh={() => { setReload(value => value + 1) }}
             onClose={close}
             onOpen={openDocument}

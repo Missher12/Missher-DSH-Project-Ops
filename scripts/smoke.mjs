@@ -16,27 +16,30 @@ import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { lockedHostDependencies } from './host-dependencies.mjs'
+import { ALLOWED_ENTRY, REQUIRED_ENTRIES, assertArchiveEntries } from './package-inspection.mjs'
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const hostRoot = process.env.PROJECT_OPS_HOST_ROOT
 const require = createRequire(hostRoot ? join(hostRoot, 'package.json') : import.meta.url)
 const dshPackageRoot = dirname(require.resolve('@deepseek-ai/dsh/package.json'))
 const dshCli = join(dshPackageRoot, 'lib', 'bin.js')
+/**
+ * One whitelist for the whole repository: the required entries and the allowed
+ * entry pattern come from `package-inspection.mjs`, so this smoke check cannot
+ * drift behind a newly added document or image directory the way a private copy
+ * of the list did.
+ */
 const expectedEntries = [
-  'package/LICENSE',
-  'package/README.i18n.yaml',
-  'package/README.md',
-  'package/README.zh.md',
-  'package/cordis.patch.yml',
-  'package/docs/AGENT_USAGE.md',
-  'package/docs/CORDIS_INTEGRATION.md',
-  'package/docs/OFFICIAL_COMPAT.md',
-  'package/docs/TASK_DOCUMENTS.md',
+  ...REQUIRED_ENTRIES,
   // The client half and the shared node chunk live in lib/ subdirectories, so
-  // the whitelist walks the emitted tree instead of one flat directory level.
+  // the list walks the emitted tree instead of one flat directory level.
   ...readdirSync(join(pluginRoot, 'lib'), { recursive: true })
     .filter(name => /\.(?:js|d\.ts)$/u.test(name))
     .map(name => `package/lib/${name.split('\\').join('/')}`),
+  ...REQUIRED_ENTRIES.filter(name => name.endsWith('README.md')).map(name => name.replace('README.md', 'README.zh.md')),
+  'package/README.i18n.yaml',
+  'package/LICENSE',
+  'package/cordis.patch.yml',
   'package/package.json',
 ].sort()
 const expectedPatch = '- insert:\n    - id: missher-project-ops\n      name: "@missher/dsh-project-ops"\n'
@@ -197,7 +200,16 @@ try {
   invariant(Array.isArray(packed) && packed.length === 1, 'npm pack returned an unexpected manifest')
   const archive = join(packDir, packed[0].filename)
   const entries = run('tar', ['-tzf', archive]).trim().split(/\r?\n/u).sort()
-  invariant(JSON.stringify(entries) === JSON.stringify(expectedEntries), `archive entries differ from whitelist: ${entries.join(', ')}`)
+  // Required entries, duplicates, escaping paths and the allowed-name pattern is
+  // one shared rule; this smoke check only adds the "exactly these files" part.
+  assertArchiveEntries(entries)
+  for (const entry of entries) {
+    invariant(ALLOWED_ENTRY.test(entry), `archive entry outside the shared whitelist: ${entry}`)
+  }
+  for (const required of expectedEntries) {
+    invariant(entries.includes(required), `archive is missing the built entry: ${required}`)
+  }
+  invariant(entries.length === new Set(entries).size, 'archive contains duplicate entries')
 
   const archiveText = expectedEntries
     .filter(entry => !entry.endsWith('LICENSE'))

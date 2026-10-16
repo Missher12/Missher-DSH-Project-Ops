@@ -1,3 +1,9 @@
+# Project Ops 0.4.0 交付索引（2026-10-17）
+
+当前公开版本、包摘要与验收范围见 [PUBLICATION.md](PUBLICATION.md) 和 [GIT_DELIVERY.json](GIT_DELIVERY.json)。下文为开发时的历史交接，不代表当前发布或本机安装状态。
+
+---
+
 # Project Ops 当前交接（2026-10-12）
 
 本轮唯一有效交付入口：[READY](docs/tasks/2026-10-12-task-documents-44fc988/READY.md)。主显示名 Project Ops，包 @missher/dsh-project-ops 0.4.0-alpha.1。源码由本 chat 单写；最终 Git/Release/日常安装由桌面 chat 01a12ddd-e1d8-7cb0-924c-8885df3afefa 统一完成。
@@ -119,3 +125,11 @@ P2 修复完整提交和新证据摘要写入 .artifacts/r7/RELEASE-CANDIDATE.js
 tests/fixtures/profile-evidence-failure.mjs 是合成宿主上的 instrumentation 夹具，通过真实子进程退出 7 后故意触发官方 probe 的断言，另覆盖原生抛错。tests/profile-evidence.spec.ts 证明返回证据先于断言落盘、异常缺失字段不伪造、复跑保留全部原文件、后续成功诊断也不能覆盖首次失败。初始 2 项反例失败；完成后 instrumentation 3 项和 selected-host 10 项共 13/13 通过。日志 .artifacts/r7-instrumentation/red.log、green-bounded.log；实际分次证据 .artifacts/r7-instrumentation/test-Y8vkJJ/。语法检查和 git diff --check 通过。
 
 本轮按要求未跑 71 项产品测试、完整 Harness Profile、严格声明或最终 Desktop 组合。之前 profile-AcWcdE 是 1426fd8 工具的原生通过证据，不能当作新 instrumentation 的原生复验。新工具源码 SHA 由更新后的 RELEASE-CANDIDATE.json 绑定；归档仍为 a08 / 0.3.1 / 40,328 bytes / 9fed65a24615211a06867223fd6f5510f51e9f775522294ead3a1d7a8fbe98c9。vilN8t 原因仍未知，最终组合相同首前台声明任务是待验事项，不得据此声明原问题已修复。未推送、tag 或发布。
+
+## 0.4.0（宽宿主兼容与界面修订，2026-10-17）
+
+- 源码版本 0.4.0；peer 从精确锁定改为有证据的范围（`>=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2`，Cordis `^4.0.4 || ^4.0.5-alpha.1`），开发 SDK 仍精确定版。
+- 判据从版本号改为能力：必需服务/方法缺失时指名报错并说明激活差异，可选服务（Jobs 后台与收集、shell 后台参数、客户端 workspaceFiles 与原生预览）缺失时只关闭对应功能。
+- 已核验三个真实宿主（社区 rc.2、社区 alpha.2、官方 npm alpha.5）的安装/运行/卸载验收：固定候选包在各自独立 HOME/DSH_HOME 的合成工作区完成安装 → 运行 → 卸载，14 项行为检查通过；官方 alpha.5 Web 侧另行完成四状态、两个原生预览、亮/暗与窄宽、键盘与关闭行为验收。
+- 界面改为 DSH 原生两行任务行（13px 标题、12px secondary 短状态、行内轻量方案/交付入口），配图见 `docs/images/task-panel-0.4.0.jpg` 与 `plan-preview-0.4.0.jpg`。
+- 尚未完成：加入公开配图后的最终打包与摘要、Git 根/Release/桌面安装、Electron 与 Intel Mac 原生交互、真实模型自主轨迹。

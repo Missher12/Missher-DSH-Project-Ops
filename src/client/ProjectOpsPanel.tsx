@@ -10,7 +10,7 @@
 import type { CSSProperties, ReactElement, RefObject } from 'react'
 import {
   IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconChevronDownOutlineRegular, IconCloseOutlineRegular,
-  IconInspectOutlineRegular, IconRefreshOutlineRegular, StateDot,
+  IconDeliverDocRegular, IconInspectOutlineRegular, IconRefreshOutlineRegular, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -60,7 +60,27 @@ export function ProjectOpsTrigger({ t, open, count, triggerRef, onToggle }: Trig
 export interface RowProps {
   t: PanelTranslate
   task: TaskLink
+  /** Native preview availability; when absent both actions stay visible but disabled. */
+  preview: PreviewAvailability
   onOpen: (task: string, file: 'PLAN.md' | 'READY.md') => void
+}
+
+/** Optional native capabilities this Host exposes to the panel. */
+export interface PanelAvailability {
+  /** The workspace-files remote is present, so tasks can be listed at all. */
+  list: boolean
+  /** The native right-sidebar preview service is present. */
+  preview: boolean
+  /** Why listing is impossible, when it is. */
+  listReason?: string
+  /** Why previewing is impossible, when it is. */
+  previewReason?: string
+}
+
+/** Preview half of {@link PanelAvailability}, narrowed for one row. */
+export interface PreviewAvailability {
+  available: boolean
+  reason: string
 }
 
 /**
@@ -70,39 +90,47 @@ export interface RowProps {
  * @param props - locale, discovered task and the preview opener.
  * @returns the list item.
  */
-export function ProjectOpsRow({ t, task, onOpen }: RowProps): ReactElement {
+export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElement {
   const view = taskView(task)
   const statusHint = t(view.hint)
+  const planDisabled = view.planDisabled || !preview.available
+  const readyDisabled = view.readyDisabled || !preview.available
+  const planTitle = !preview.available ? preview.reason : view.planDisabled ? t('view.missingPlan') : `${t('view.plan')} · ${task.id}/PLAN.md`
+  const readyTitle = !preview.available ? preview.reason : view.readyDisabled ? t('view.missingReady') : `${t('view.ready')} · ${task.id}/READY.md`
   return (
     <li className={styles.row} title={`${task.id} · ${statusHint}`} data-task={task.id}>
-      <StateDot state={view.dot} className={styles.rowDot} />
       <div className={styles.rowMain}>
-        <div className={styles.rowPrimary}>
-          {view.hasTitle
-            ? <span className={styles.rowTitle}>{view.title}</span>
-            : <span className={styles.rowId}>{view.id}</span>}
-          <span className={classNames(styles.rowStatus, view.attention && styles.rowStatusWarn)}>{t(view.status)}</span>
+        <div className={styles.rowTitle} title={view.hasTitle ? view.title : undefined}>
+          {view.hasTitle ? view.title : <span className={styles.rowId}>{view.id}</span>}
         </div>
-      </div>
-      <div className={styles.rowActions}>
-        <button
-          type="button"
-          className={styles.action}
-          disabled={view.planDisabled}
-          title={view.planDisabled ? t('view.missingPlan') : `${t('view.plan')} · ${task.id}/PLAN.md`}
-          onClick={() => { onOpen(task.id, 'PLAN.md') }}
-        >
-          {t('view.plan')}
-        </button>
-        <button
-          type="button"
-          className={styles.action}
-          disabled={view.readyDisabled}
-          title={view.readyDisabled ? t('view.missingReady') : `${t('view.ready')} · ${task.id}/READY.md`}
-          onClick={() => { onOpen(task.id, 'READY.md') }}
-        >
-          {t('view.ready')}
-        </button>
+        <div className={styles.rowMeta}>
+          <StateDot state={view.dot} className={styles.rowDot} />
+          {/* The amber stays on the dot: the warning label color does not meet
+              the contrast the status text needs in the light theme. */}
+          <span className={styles.rowStatus} title={statusHint}>{t(view.status)}</span>
+          <span className={styles.rowActions}>
+            <button
+              type="button"
+              className={styles.action}
+              disabled={planDisabled}
+              title={planTitle}
+              onClick={() => { onOpen(task.id, 'PLAN.md') }}
+            >
+              <IconChecklistOutlineRegular size={12} className={styles.actionIcon} />
+              <span>{t('view.plan')}</span>
+            </button>
+            <button
+              type="button"
+              className={styles.action}
+              disabled={readyDisabled}
+              title={readyTitle}
+              onClick={() => { onOpen(task.id, 'READY.md') }}
+            >
+              <IconDeliverDocRegular size={12} className={styles.actionIcon} />
+              <span>{t('view.ready')}</span>
+            </button>
+          </span>
+        </div>
       </div>
     </li>
   )
@@ -122,9 +150,21 @@ export interface PanelProps {
   /** Read failure detail, absent when the last read succeeded. */
   error: string | undefined
   busy: boolean
+  /** Optional native capabilities observed on this Host. */
+  availability: PanelAvailability
   onRefresh: () => void
   onClose: () => void
   onOpen: (task: string, file: 'PLAN.md' | 'READY.md') => void
+}
+
+/** One notice line for a capability this Host does not expose; the service name stays in the tooltip. */
+function UnavailableNotice({ text, detail }: { text: string; detail: string }): ReactElement {
+  return (
+    <div className={styles.notice} role="status" title={detail}>
+      <IconInspectOutlineRegular size={14} />
+      <span>{text}</span>
+    </div>
+  )
 }
 
 /**
@@ -134,8 +174,9 @@ export interface PanelProps {
  * @returns the portaled panel, or `null` while closed.
  */
 export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
-  const { t, open, position, measureStyle, panelRef, result, error, busy, onRefresh, onClose, onOpen } = props
+  const { t, open, position, measureStyle, panelRef, result, error, busy, availability, onRefresh, onClose, onOpen } = props
   if (!open) return null
+  const preview = { available: availability.preview, reason: availability.previewReason ?? t('unavailable.preview') }
   return (
     <section
       ref={panelRef}
@@ -149,7 +190,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
       <header className={styles.header}>
         <span className={styles.headerTitle}>{t('title')}</span>
         <span className={styles.headerCount}>
-          {result === undefined ? '' : t('count', { count: result.tasks.length })}
+          {availability.list && result !== undefined ? t('count', { count: result.tasks.length }) : ''}
         </span>
         <button
           type="button"
@@ -170,8 +211,10 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           <IconCloseOutlineRegular size={14} />
         </button>
       </header>
-      <p className={styles.hint}>{t('hint')}</p>
-      {error !== undefined
+      {!availability.list
+        ? <UnavailableNotice text={availability.listReason ?? t('unavailable.list')} detail={t('unavailable.listDetail')} />
+        : null}
+      {availability.list && error !== undefined
         ? (
           <div className={classNames(styles.notice, styles.noticeError)} role="alert">
             <IconInspectOutlineRegular size={14} />
@@ -180,7 +223,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           </div>
         )
         : null}
-      {error === undefined && result === undefined
+      {availability.list && error === undefined && result === undefined
         ? (
           <div className={styles.skeleton} role="status" aria-label={t('loading')}>
             <span className={classNames(styles.skeletonLine, styles.skeletonLineShort)} />
@@ -189,7 +232,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           </div>
         )
         : null}
-      {error === undefined && result !== undefined && result.tasks.length === 0
+      {availability.list && error === undefined && result !== undefined && result.tasks.length === 0
         ? (
           <div className={styles.notice} role="status">
             <IconArchiveOutlineRegular size={14} />
@@ -197,18 +240,19 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           </div>
         )
         : null}
-      {error === undefined && result !== undefined && result.tasks.length > 0
+      {availability.list && error === undefined && result !== undefined && result.tasks.length > 0
         ? (
           <ul className={styles.list}>
-            {result.tasks.map(task => <ProjectOpsRow key={task.id} t={t} task={task} onOpen={onOpen} />)}
+            {result.tasks.map(task => <ProjectOpsRow key={task.id} t={t} task={task} preview={preview} onOpen={onOpen} />)}
           </ul>
         )
         : null}
-      {error === undefined && result?.truncated === true
+      {availability.list && error === undefined && result?.truncated === true
         ? (
           <div className={styles.notice}>{t('truncated')}</div>
         )
         : null}
+      <footer className={styles.footer} title={t('footer')}>{t('footer')}</footer>
     </section>
   )
 }

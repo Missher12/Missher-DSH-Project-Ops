@@ -24,8 +24,13 @@ describe('Bundle package', () => {
       peerDependencies: Record<string, string>
       peerDependenciesMeta: Record<string, { optional?: boolean }>
     }
-    expect(manifest.version).toBe('0.4.0-alpha.2')
-    expect(manifest.peerDependencies['@deepseek-ai/dsh-jobs']).toBe('0.2.1-alpha.2')
+    expect(manifest.version).toBe('0.4.0')
+    // The published range must name the tested release lines, not a wildcard:
+    // inclusion against the two real Hosts is proven by scripts/check-peer-ranges.mjs.
+    const hostRange = manifest.peerDependencies['@deepseek-ai/dsh-jobs']!
+    expect(hostRange).toContain('0.2.0-rc.2')
+    expect(hostRange).toContain('0.2.1-alpha.2')
+    expect(hostRange).not.toMatch(/^\*$|\blatest\b/u)
     expect(Object.keys(manifest.peerDependenciesMeta).sort()).toEqual(Object.keys(manifest.peerDependencies).sort())
     expect(Object.values(manifest.peerDependenciesMeta).every(meta => meta.optional === true)).toBe(true)
   })

@@ -71,6 +71,11 @@ function buttons(tree: ReactNode): ReactElement[] {
   return elements(tree).filter(element => element.type === 'button')
 }
 
+/** Both optional native capabilities present. */
+const AVAILABLE = { list: true, preview: true }
+/** Preview present for the row-level tests. */
+const PREVIEW = { available: true, reason: 'n/a' }
+
 function task(overrides: Partial<TaskLink> = {}): TaskLink {
   return { id: '2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e', plan: true, ready: false, title: 'DSH 原生风格界面修订', delivery: 'missing', ...overrides }
 }
@@ -91,6 +96,8 @@ test('locales keep one key set and describe links, never acceptance', () => {
 test('four delivery freshness states map to four labels and never to a success dot', () => {
   const seen = ['current', 'historical', 'inspect', 'missing'] as const
   expect(seen.map(state => deliveryView(state).statusKey)).toEqual(['status.current', 'status.historical', 'status.inspect', 'status.missing'])
+  // The four in-row labels stay short; the boundary wording lives in the hints.
+  expect(seen.map(state => t(deliveryView(state).statusKey))).toEqual(['交付关联当前方案', '方案已更新', '记录待核对', '方案进行中'])
   // A linked delivery record is metadata: neutral, and only the record the
   // human has to check earns the attention color.
   expect(seen.map(state => deliveryView(state).dot)).toEqual(['idle', 'idle', 'warning', 'idle'])
@@ -99,7 +106,7 @@ test('four delivery freshness states map to four labels and never to a success d
 })
 
 test('a task row shows the Chinese title and hides the directory id behind title', () => {
-  const tree = ProjectOpsRow({ t, task: task(), onOpen: () => {} })
+  const tree = ProjectOpsRow({ t, task: task(), preview: PREVIEW, onOpen: () => {} })
   const rowProps = elements(tree)[0]!.props as { title: string, 'data-task': string }
   expect(rowProps['data-task']).toBe(task().id)
   expect(rowProps.title).toContain(task().id)
@@ -107,18 +114,25 @@ test('a task row shows the Chinese title and hides the directory id behind title
   expect(withClass(tree, styles.rowId).length).toBe(0)
   expect(text(tree)).toContain('DSH 原生风格界面修订')
   expect(text(tree)).not.toContain('2026-10-12-project-ops')
-  expect(text(tree)).toContain('尚未生成交付')
+  // Short status on the metadata line; the acceptance boundary lives in its tooltip.
+  expect(text(tree)).toContain('方案进行中')
+  expect(text(tree)).not.toContain('不代表')
+  const status = withClass(tree, styles.rowStatus)[0]!
+  expect(String((status.props as { title?: string }).title)).toContain('不代表')
 })
 
 test('a row without a readable title falls back to the id instead of inventing one', () => {
-  const tree = ProjectOpsRow({ t, task: task({ title: undefined }), onOpen: () => {} })
+  const tree = ProjectOpsRow({ t, task: task({ title: undefined }), preview: PREVIEW, onOpen: () => {} })
+  // The heading line still exists, but it carries the id fallback rather than a
+  // real title (and therefore offers no separate full-title tooltip).
+  const heading = withClass(tree, styles.rowTitle)[0]!
   expect(withClass(tree, styles.rowId).length).toBe(1)
-  expect(withClass(tree, styles.rowTitle).length).toBe(0)
+  expect(heading.props.title).toBeUndefined()
   expect(text(tree)).toContain('2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e')
 })
 
 test('a missing document disables its action and says why', () => {
-  const tree = ProjectOpsRow({ t, task: task({ plan: true, ready: false }), onOpen: () => {} })
+  const tree = ProjectOpsRow({ t, task: task({ plan: true, ready: false }), preview: PREVIEW, onOpen: () => {} })
   const actions = buttons(tree)
   expect(actions.length).toBe(2)
   const [plan, ready] = actions as [ReactElement<{ disabled?: boolean, title?: string }>, ReactElement<{ disabled?: boolean, title?: string }>]
@@ -126,13 +140,13 @@ test('a missing document disables its action and says why', () => {
   expect(plan.props.title).toContain('PLAN.md')
   expect(ready.props.disabled).toBe(true)
   expect(ready.props.title).toBe('尚未生成交付记录')
-  expect(text(tree)).toContain('查看方案')
-  expect(text(tree)).toContain('查看交付')
+  expect(text(tree)).toContain('方案')
+  expect(text(tree)).toContain('交付')
 })
 
 test('opening a document reports the task and file to the preview opener', () => {
   const calls: [string, string][] = []
-  const tree = ProjectOpsRow({ t, task: task({ ready: true }), onOpen: (id, file) => { calls.push([id, file]) } })
+  const tree = ProjectOpsRow({ t, task: task({ ready: true }), preview: PREVIEW, onOpen: (id, file) => { calls.push([id, file]) } })
   const actions = buttons(tree) as ReactElement<{ onClick: () => void }>[]
   actions[1]!.props.onClick()
   expect(calls).toEqual([[task().id, 'READY.md']])
@@ -152,7 +166,7 @@ test('the trigger is a plain labelled button, not a browser default face', () =>
 })
 
 test('the panel reports loading, empty, error and truncated states distinctly', () => {
-  const base = { t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
+  const base = { t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false, availability: AVAILABLE, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
   const loading = ProjectOpsPanel({ ...base, result: undefined, error: undefined })
   expect(String((withClass(loading, styles.skeleton)[0]!.props as { role?: string }).role)).toBe('status')
   expect(elements(loading).some(element => (element.props as { 'aria-label'?: string })['aria-label'] === '正在读取项目任务…')).toBe(true)
@@ -174,7 +188,7 @@ test('the panel reports loading, empty, error and truncated states distinctly', 
 test('the panel exposes its title, refresh and close actions and a read-only hint', () => {
   const tree = ProjectOpsPanel({
     t, open: true, position: { left: 10, top: 20 }, measureStyle: {}, panelRef: { current: null },
-    result: { tasks: [task()], truncated: false }, error: undefined, busy: false,
+    result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })
   const panel = elements(tree)
@@ -188,16 +202,43 @@ test('the panel exposes its title, refresh and close actions and a read-only hin
   const labels = panel.map(element => (element.props as { 'aria-label'?: string })['aria-label']).filter(Boolean)
   expect(labels).toContain('刷新')
   expect(labels).toContain('关闭')
-  expect(text(tree)).toContain('交付记录只保留历史事实')
+  expect(withClass(tree, styles.footer).length).toBe(1)
+  expect(text(tree)).toContain('文件存在不代表已发布或安装')
   expect(text(tree)).toContain('1 项')
 })
 
 test('a closed panel renders nothing at all', () => {
   expect(ProjectOpsPanel({
     t, open: false, position: null, measureStyle: {}, panelRef: { current: null },
-    result: { tasks: [task()], truncated: false }, error: undefined, busy: true,
+    result: { tasks: [task()], truncated: false }, error: undefined, busy: true, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })).toBeNull()
+})
+
+test('a Host without the workspace-files remote explains itself instead of showing an empty project', () => {
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: undefined, error: undefined, busy: false, availability: { list: false, preview: true },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
+  })
+  const rendered = text(tree)
+  expect(rendered).toContain('未提供工作区文件读取能力')
+  const notice = withClass(tree, styles.notice)[0]!
+  expect(String((notice.props as { title?: string }).title)).toContain('remote.workspaceFiles')
+  // A missing read capability must never be rendered as "no tasks yet".
+  expect(rendered).not.toContain('尚无开发任务')
+  expect(withClass(tree, styles.skeleton).length).toBe(0)
+})
+
+test('a Host without the native preview keeps the rows but disables both actions with one reason', () => {
+  const reason = '此 Host 未提供原生文件预览'
+  const tree = ProjectOpsRow({ t, task: task({ ready: true }), preview: { available: false, reason }, onOpen: () => {} })
+  const actions = buttons(tree) as ReactElement<{ disabled?: boolean, title?: string }>[]
+  expect(actions.length).toBe(2)
+  expect(actions.every(action => action.props.disabled === true)).toBe(true)
+  expect(actions.every(action => action.props.title === reason)).toBe(true)
+  // The row itself is still listed: only the affected action is disabled.
+  expect(text(tree)).toContain('DSH 原生风格界面修订')
 })
 
 test('the English dictionary renders the same four states', () => {

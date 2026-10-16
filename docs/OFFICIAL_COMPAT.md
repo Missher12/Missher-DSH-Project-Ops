@@ -2,6 +2,8 @@
 
 English | [中文](#中文)
 
+> **历史记录（0.3.1 时代）**：本文记录的是 0.3.1 面向 Harness 0.1.5-rc.2 与 `@deepseek-ai/cordis` 4.0.2 的验收，**不代表当前版本**。当前版本的宿主来源、最低接口、缺能力降级与未测范围见 [兼容性矩阵](COMPATIBILITY.md)。
+
 Project Ops 0.3.1 targets published Harness 0.1.5-rc.2 packages and `@deepseek-ai/cordis` 4.0.2. The source comparison reference is `fb2c4b9e698e30edb738bca4cf0618587db7d203`. Validation uses exact registry packages recorded by `pnpm-lock.yaml`; it does not substitute same-version packages built from a modified Desktop branch or claim that the published binaries were rebuilt from this Git reference.
 
 The Harness adapter uses `ToolCallId` from `dsh-llm` and `JsonValue` from `dsh-util-values`. Every nested native tool result forwards its `additionalContexts` in order through `exec.deferContext()`. Only a successful result carrying `concludesTurn` invokes `exec.concludeTurn()`. Failure context is retained without turning a failed nested call into a terminal success. The task engine, native Jobs ownership, approvals, sandbox and cancellation remain unchanged.

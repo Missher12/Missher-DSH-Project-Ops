@@ -32,8 +32,50 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** The task identity surface, re-exported for consumers that only read documents. */
 export type { TaskLink, TaskListResult } from './task-view.ts'
 
-/** Required client services: slots, dictionaries, the file remotes and the native preview. */
-export const inject = ['slots', 'locale', 'remote', 'remote.workspaceFiles', 'sidebarRight']
+/**
+ * Required client services: only the slot registry and the dictionaries.
+ *
+ * The file remotes and the native preview stay optional: a cordis 4.x plugin
+ * `inject` entry is a hard activation requirement, so listing them here would
+ * remove the whole Project Ops entry from a Host that lacks one of them.
+ */
+export const inject = ['slots', 'locale']
+
+/** Optional native services, named exactly as the kernel names them. */
+export const OPTIONAL_SERVICES = ['remote.workspaceFiles', 'sidebarRight'] as const
+export type OptionalService = typeof OPTIONAL_SERVICES[number]
+
+/** Whether a live service actually exposes every method this panel calls. */
+function hasMethods(service: unknown, members: readonly string[]): boolean {
+  if (typeof service !== 'object' || service === null) return false
+  const face = service as Record<string, unknown>
+  return members.every(member => typeof face[member] === 'function')
+}
+
+/**
+ * Optional-service accessor of one plugin activation.
+ *
+ * `ctx.get(name)` is the kernel's documented accessor **without the inject
+ * requirement**: it looks the service up by its full name in the isolate store
+ * (so the nested service's own name, `remote.workspaceFiles`, is the key), and
+ * its strict default returns `undefined` while the providing fiber is inactive.
+ * Reading the nested property off `ctx.remote` instead goes through the
+ * namespace accessor, which requires that exact name to be injected and throws
+ * `cannot get property "remote.workspaceFiles" without inject` otherwise — the
+ * failure that removed the whole Project Ops entry from the official alpha.5
+ * Web build.
+ *
+ * Nothing is cached here: a deactivated provider must not keep reporting as
+ * available, and the kernel already answers that question per call.
+ */
+export function optionalServices(ctx: Context) {
+  return {
+    /** The service, or `undefined` when this Host does not currently provide it. */
+    get(name: OptionalService): unknown {
+      return ctx.get(name)
+    },
+  }
+}
 
 /** One bounded read at a time, four requests in flight at most. */
 const READ_CONCURRENCY = 4
@@ -51,14 +93,26 @@ const TASK_DIRECTORY = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]{1,48}-[a-f0-9]{16}$/u
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }))
   installStyles(ctx)
+  const optional = optionalServices(ctx)
+  const workspaceFiles = (): Context['remote']['workspaceFiles'] | undefined => {
+    const service = optional.get('remote.workspaceFiles')
+    return hasMethods(service, ['list', 'readBytes']) ? service as Context['remote']['workspaceFiles'] : undefined
+  }
+  const preview = (): Context['sidebarRight'] | undefined => {
+    const service = optional.get('sidebarRight')
+    return hasMethods(service, ['openResource']) ? service as Context['sidebarRight'] : undefined
+  }
   ctx.effect(() => ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
     id: '@missher/dsh-project-ops',
     locale: NS,
     order: 140,
     inject: (sessionId: SessionId): Face => ({
+      surface: () => ({ list: workspaceFiles() !== undefined, preview: preview() !== undefined }),
       async list(signal): Promise<TaskListResult> {
-        const root = await ctx.remote.workspaceFiles.list(sessionId, 'docs/tasks', signal)
+        const files = workspaceFiles()
+        if (files === undefined) throw new Error('the workspace-files remote (remote.workspaceFiles.list/readBytes) is unavailable on this Host')
+        const root = await files.list(sessionId, 'docs/tasks', signal)
         if (!root.ok) {
           if (root.error.code === 'workspace-file/not-found') return { tasks: [], truncated: false }
           throw new Error(root.error.message)
@@ -79,13 +133,13 @@ export function apply(ctx: Context): void {
             let plan = false
             let ready = false
             try {
-              const children = await ctx.remote.workspaceFiles.list(sessionId, path, signal)
+              const children = await files.list(sessionId, path, signal)
               if (!children.ok) throw new Error(children.error.message)
               plan = children.value.entries.some(row => row.type === 'file' && row.name === 'PLAN.md')
               ready = children.value.entries.some(row => row.type === 'file' && row.name === 'READY.md')
               const read = async (file: string, exists: boolean) => {
                 if (!exists) return undefined
-                const response = await ctx.remote.workspaceFiles.readBytes(sessionId, `${path}/${file}`, { range: { offset: 0, length: 128 * 1024 } }, signal)
+                const response = await files.readBytes(sessionId, `${path}/${file}`, { range: { offset: 0, length: 128 * 1024 } }, signal)
                 if (!response.ok || !response.value.eof) throw new Error('Document unavailable or too large')
                 return new TextDecoder('utf-8', { fatal: true }).decode(response.value.data)
               }
@@ -101,7 +155,11 @@ export function apply(ctx: Context): void {
         }))
         return { tasks, truncated: root.value.truncated || dirs.length > TASK_LIMIT }
       },
-      open: (task, file) => ctx.sidebarRight.openResource(sessionFileAddress(sessionId, `docs/tasks/${task}/${file}`)),
+      open: (task, file) => {
+        // The panel disables both actions when the preview is absent; this guard
+        // keeps the no-op explicit instead of throwing out of a click handler.
+        preview()?.openResource(sessionFileAddress(sessionId, `docs/tasks/${task}/${file}`))
+      },
     }),
   }, ProjectOpsAction)))
 }

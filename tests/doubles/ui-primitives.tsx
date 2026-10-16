@@ -26,6 +26,7 @@ export const IconArchiveOutlineRegular = icon('archive')
 export const IconChecklistOutlineRegular = icon('checklist')
 export const IconChevronDownOutlineRegular = icon('chevron-down')
 export const IconCloseOutlineRegular = icon('close')
+export const IconDeliverDocRegular = icon('deliver-doc')
 export const IconInspectOutlineRegular = icon('inspect')
 export const IconRefreshOutlineRegular = icon('refresh')
 

@@ -15,8 +15,15 @@ type Service = ProjectOpsService<ToolRunContext>
 /** Stable Cordis plugin name. */
 export const name = 'missher-project-ops'
 
-/** Harness services required by Project Ops. */
-export const inject = ['fs', 'tools', 'jobs']
+/**
+ * Harness services Project Ops cannot work without.
+ *
+ * Only the minimum lives here: a cordis 4.x plugin `inject` entry is a hard
+ * activation requirement, so a Host without the optional native Jobs service
+ * must still load Project Ops and see the background half reported as disabled
+ * (see `doctor`) instead of losing the whole plugin.
+ */
+export const inject = ['fs', 'tools']
 
 const TASK_LIST = 'missher_project_ops_task_list'
 const TASK_PLAN = 'missher_project_ops_task_plan'
@@ -323,6 +330,12 @@ function capabilitySearchTool(service: Service): ToolDefinition {
 
 /** Register the Project Ops model tools. */
 export function apply(ctx: Context, config: HarnessConfig = {}): void {
+  // A registry without `register` cannot take any Project Ops tool: report the
+  // exact gap instead of failing inside the first registration with a TypeError.
+  const registry = ctx.get('tools') as { register?: unknown } | undefined
+  if (registry === undefined || typeof registry.register !== 'function') {
+    throw new Error('Project Ops requires a Host tool registry exposing register(); this Host does not provide one')
+  }
   const service = new ProjectOpsService(createHarnessHost(ctx, config))
   ctx.effect(() => () => service.dispose())
   ctx.provide('projectOps', service)

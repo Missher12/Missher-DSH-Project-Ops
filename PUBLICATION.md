@@ -1,15 +1,11 @@
-# 0.4.0-alpha.2 交付说明
+# Project Ops 0.4.0
 
-本次同步包含新版 Project Ops 界面源码和匹配冻结包的运行文件。入口采用 DSH 主题与锚定面板，提供紧凑任务行、方案和交付预览；文档与 Jobs 后端行为保持不变。实现由 DSH 原生 DeepSeek-V4.1-Flash/max 完成，Codex 负责独立审查和 Git 交付。
+本版将宿主精确版本限制改为版本范围，并按可用接口降级可选功能；修复官方 alpha.5 的客户端远端服务访问。任务入口采用 DSH 主题、紧凑两行列表，方案与交付打开原生文件预览。原生执行、后台任务归属、权限和文档版本保护保留。
 
-类型检查、112 项测试、公开声明消费和 Host UI 契约检查通过。在官方 0.2.1-alpha.2 隔离 Web 中，亮暗主题、四种状态、缺少 READY 时禁用、两项预览、键盘焦点、外部点击关闭、窄窗口和滚动均通过，控制台错误为 0。
+[安装包与校验和](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.0) · [安装步骤](INSTALL.md) · [界面截图](README.zh.md#界面) · [全部插件](https://github.com/Missher12/Missher-DeepseekHarness-Desktop)
 
-本机 Ubuntu 日常桌面已通过正式 CLI 安装，包内 18 个文件逐字节一致，重启后的插件处于 active；实际查看新版入口、空面板和当前任务面板通过。既有会话日志和保留的用户设置、有效设置保持一致。这项安装不代表其他设备已同步。
+本版在社区 rc.2、社区 alpha.2、官方 npm alpha.5 三个宿主完成隔离安装、运行、卸载；官方 alpha.5 Web 的亮暗主题、宽窄窗口、四种文档状态、PLAN/READY 预览与键盘焦点已验。类型检查、构建、定向回归、声明消费和版本范围检查通过。详细范围见 [兼容矩阵](docs/COMPATIBILITY.md) 与 [交付记录](docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/READY.md)。
 
-[正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.0-alpha.2) 已公开，版本名保留原有 alpha 标识；该 Release 未标记预发布。Intel Mac 的插件原生交互仍未验证。官方类型依赖受原生沙箱限制，保留了经目标 Host 契约核查的窄声明；读取取消与四并发未做专项压力测试。Project Ops 本轮自身任务回执门仍为 stale，独立测试通过不会将它改写成原生验证门通过。开发时冻结的 PLAN/READY 保留当时状态，后续独立验收和日常安装以上述记录为准。
+包 SHA-256：`c48e2895dd077421470ba5866e86016432201788fc222bcf4b1b15b6b7bd94ce`，249145 bytes。24 个包文件与此版本仓库一致，正式包的运行字节与受测预览包一致。
 
-冻结包 SHA-256：`1d58e94f06c2f9f08faea45dfac141fe770ecc61343c179cda60668f5421b558`，大小 63,464 bytes。源码归档和运行件摘要见 [GIT_DELIVERY.json](GIT_DELIVERY.json)。公开导出只补充交付说明、同步 README 状态及沿用个人路径占位符；业务源码与冻结运行件未改。
-
-兼容维护按宿主能力与合理版本范围推进，持续适配最新版。已测试版本仅作证据记录；当前冻结包的精确 Host peer 声明未在本次文档更新中改变，未测版本不写成已通过。下载归档保留构建时文档，当前发布状态以本页与 Release 为准。
-
-[桌面与全部插件入口](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [安装说明](INSTALL.md)
+此版本日常安装尚未核验；Electron、Intel Mac 原生交互、真实模型自主流程和其他宿主版本不在已通过范围。0.4.0-alpha.2 的既有日常安装证据仍保留在 Git 历史，不转用于证明本版。

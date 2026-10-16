@@ -46,6 +46,20 @@ async function setup(cwd: string) {
   return { ctx, fiber }
 }
 
+/**
+ * Same native stack as {@link setup}, minus the Jobs service: this is the real
+ * cordis activation boundary a reduced Host presents, not a hand-passed undefined.
+ */
+async function setupWithoutJobs(cwd: string) {
+  const ctx = new Context()
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SystemPrompt, {})
+  await ctx.plugin(ToolRuntime)
+  await ctx.plugin(LocalFileSystem, { cwd, diffBasisMaxBytes: 1024 * 1024 })
+  const fiber = await ctx.plugin(ProjectOps)
+  return { ctx, fiber }
+}
+
 function registerAgent(ctx: Context, owner: Agent): void {
   Object.defineProperty(owner, 'ctx', { configurable: true, value: ctx })
   ctx.agents.register(owner)
@@ -471,5 +485,160 @@ describe('Project Ops Cordis plugin', () => {
 
     expect(searched.isError).toBe(false)
     expect((searched as { value: { matches: { id: string }[] } }).value.matches).toEqual([])
+  })
+
+  test('loads on a Host without the native Jobs service and reports only that half as disabled', async () => {
+    const cwd = workspace()
+    const { ctx, fiber } = await setupWithoutJobs(cwd)
+    const owner = agent(cwd)
+    registerAgent(ctx, owner)
+    // The shell DOES expose the background parameter here: Jobs is the only
+    // missing capability, so the reported reason must name the Jobs service and
+    // not the shell parameter (the two are covered separately below).
+    ctx.tools.register(defineTool({
+      name: platformExecutor,
+      description: 'Shell with background execution but no Jobs service.',
+      parameters: { command: { type: 'string', required: true }, workdir: { type: 'string' }, run_in_background: { type: 'boolean' } },
+      output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'ran' }] },
+      async execute() { return { kind: 'foreground', exitCode: 0 } },
+    }))
+
+    // The plugin activated: every tool is registered even though Jobs is absent.
+    expect(fiber).toBeDefined()
+    const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+    expect(listed.isError).toBe(false)
+
+    const doctor = await call(ctx, owner, 'missher_project_ops_doctor', {})
+    const report = (doctor as { value: { foreground: boolean; background: boolean; cancellation: boolean; notes: string[]; scope: string } }).value
+    expect(report.foreground).toBe(true)
+    expect(report.background).toBe(false)
+    expect(report.cancellation).toBe(false)
+    expect(report.scope).toBe('available')
+    expect(report.notes.join(' ')).toContain('dsh-jobs')
+
+    // Background work is refused with the reason, never with a TypeError.
+    const task = (listed as { value: { tasks: { id: string; manifestDigest: string }[] } }).value.tasks[0]!
+    const refused = await call(ctx, owner, 'missher_project_ops_task_run', {
+      taskId: task.id, manifestDigest: task.manifestDigest, mode: 'background',
+    })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('background execution is unavailable') })
+    expect(refused.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('dsh-jobs') })
+
+    // A foreign job id stays behind the ownership fence: the evidence check runs
+    // before the capability check, so an unknown job is never reported as a mere
+    // capability gap.
+    const foreign = await call(ctx, owner, 'missher_project_ops_task_collect', {
+      taskId: task.id, manifestDigest: task.manifestDigest, jobId: 'bash-1',
+      nestedCallId: 'outer:project-ops:1', startedAt: new Date().toISOString(),
+    })
+    expect(foreign.isError).toBe(true)
+    expect(foreign.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('does not belong to this Project Ops dispatch') })
+  })
+
+  test('refuses background mode naming the missing shell parameter when Jobs is available', async () => {
+    const cwd = workspace()
+    const { ctx } = await setup(cwd)
+    const owner = agent(cwd, 'missing-shell-parameter')
+    registerAgent(ctx, owner)
+    // Jobs is present here; only the shell cannot run in the background.
+    ctx.tools.register(defineTool({
+      name: platformExecutor,
+      description: 'Foreground-only shell.',
+      parameters: { command: { type: 'string', required: true }, workdir: { type: 'string' } },
+      output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'ran' }] },
+      async execute() { return { kind: 'foreground', exitCode: 0 } },
+    }))
+    const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+    const task = (listed as { value: { tasks: { id: string; manifestDigest: string }[] } }).value.tasks[0]!
+
+    const refused = await call(ctx, owner, 'missher_project_ops_task_run', {
+      taskId: task.id, manifestDigest: task.manifestDigest, mode: 'background',
+    })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]).toMatchObject({ type: 'text',
+      text: expect.stringContaining('does not expose run_in_background') })
+
+    const doctor = await call(ctx, owner, 'missher_project_ops_doctor', {})
+    const report = (doctor as { value: { background: boolean; notes: string[] } }).value
+    expect(report.background).toBe(false)
+    expect(report.notes.join(' ')).toContain('run_in_background')
+  })
+
+  test('keeps a promoted native job id, and collecting it reports the missing Jobs service', async () => {
+    const cwd = workspace()
+    const { ctx } = await setupWithoutJobs(cwd)
+    const owner = agent(cwd, 'promoted-without-jobs')
+    registerAgent(ctx, owner)
+    ctx.tools.register(defineTool({
+      name: platformExecutor,
+      description: 'Shell that promotes a long foreground call.',
+      parameters: { command: { type: 'string', required: true }, workdir: { type: 'string' }, run_in_background: { type: 'boolean' } },
+      output: { schema: { type: 'object', additionalProperties: true }, render: () => [{ type: 'text', text: 'still running' }] },
+      async execute() { return { kind: 'promoted', jobId: 'bash-7', status: 'running' } },
+    }))
+    const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+    const task = (listed as { value: { tasks: { id: string; manifestDigest: string }[] } }).value.tasks[0]!
+
+    const result = await call(ctx, owner, 'missher_project_ops_task_run', {
+      taskId: task.id, manifestDigest: task.manifestDigest, mode: 'foreground',
+    })
+    const value = (result as { value: { nestedContent: { text?: string }[]; receipt: { jobId?: string; outcome: string; executionMode: string; nestedCallId: string; startedAt: string } } }).value
+    // The native job is still the Host's: its id survives, the outcome is not a
+    // success, and the follow-up path is named instead of silently lost.
+    expect(value.receipt.jobId).toBe('bash-7')
+    expect(value.receipt.outcome).toBe('running')
+    expect(value.receipt.executionMode).toBe('background')
+    expect(value.nestedContent.map(block => block.text ?? '').join(' ')).toContain('job_output')
+
+    // This plugin dispatched the job, so the ownership fence passes and the
+    // refusal is the capability gap itself.
+    const collected = await call(ctx, owner, 'missher_project_ops_task_collect', {
+      taskId: task.id, manifestDigest: task.manifestDigest, jobId: value.receipt.jobId,
+      nestedCallId: value.receipt.nestedCallId, startedAt: value.receipt.startedAt,
+    })
+    expect(collected.isError).toBe(true)
+    expect(collected.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('background collection is unavailable') })
+    expect(collected.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('dsh-jobs') })
+  })
+
+  test('reports a reduced tool registry precisely instead of failing with a TypeError', async () => {
+    const cwd = workspace()
+    const { ctx } = await setup(cwd)
+    const owner = agent(cwd, 'reduced-registry')
+    registerAgent(ctx, owner)
+    // Shadow the prototype method with an undefined own property: the service is
+    // present but not fully usable, which is exactly what the probe must survive.
+    Object.defineProperty(ctx.tools, 'schemas', { value: undefined, configurable: true })
+
+    const doctor = await call(ctx, owner, 'missher_project_ops_doctor', {})
+    expect(doctor.isError).toBe(false)
+    const report = (doctor as { value: { scope: string; notes: string[] } }).value
+    expect(report.scope).toBe('unavailable')
+    expect(report.notes.join(' ')).toContain('tool registry')
+    expect(report.notes.join(' ')).toContain('schemas')
+
+    // Every other tool reports the same core gap rather than an internal error.
+    const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+    expect(listed.isError).toBe(true)
+    expect(listed.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('tool registry') })
+  })
+
+  test('reports a reduced FileSystem service precisely instead of failing with a TypeError', async () => {
+    const cwd = workspace()
+    const { ctx } = await setup(cwd)
+    const owner = agent(cwd, 'reduced-filesystem')
+    registerAgent(ctx, owner)
+    Object.defineProperty(ctx.fs, 'lstat', { value: undefined, configurable: true })
+
+    const doctor = await call(ctx, owner, 'missher_project_ops_doctor', {})
+    expect(doctor.isError).toBe(false)
+    const report = (doctor as { value: { scope: string; notes: string[] } }).value
+    expect(report.scope).toBe('unavailable')
+    expect(report.notes.join(' ')).toContain('FileSystem service does not expose lstat')
+
+    const listed = await call(ctx, owner, 'missher_project_ops_task_list', {})
+    expect(listed.isError).toBe(true)
+    expect(listed.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('FileSystem service does not expose lstat') })
   })
 })

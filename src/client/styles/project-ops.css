@@ -78,8 +78,8 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  width: 420px;
-  max-width: min(440px, calc(100vw - 24px));
+  width: 440px;
+  max-width: min(460px, calc(100vw - 24px));
   max-height: min(520px, calc(100vh - 140px));
   padding: 3px;
   overflow: hidden auto;
@@ -175,10 +175,10 @@
   to { transform: rotate(360deg); }
 }
 
-/* One short line carrying the read-only meaning of the whole panel. */
-.po-hint {
+/* Light footer line; the list stays the panel's main content. */
+.po-footer {
   flex: none;
-  margin: 0 8px 5px;
+  margin: 3px 8px 5px;
   color: var(--dsw-alias-label-caption);
   font-size: var(--dsw-font-xxxs-11-font-size);
   line-height: 16px;
@@ -230,16 +230,14 @@
 }
 
 /*
- * Task card: the hover wash rides the whole row so the trailing actions stay
- * inside it, and the inner content stays transparent to avoid stacked washes.
+ * Task card: heading line first, then a metadata line carrying the short status
+ * and the two lightweight document entries. The hover wash rides the whole card
+ * so the trailing entries stay inside it.
  */
 .po-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
   box-sizing: border-box;
-  min-height: 28px;
-  padding: 5px 5px 5px 8px;
+  padding: 9px 8px;
   border-radius: var(--dsw-radius-sm);
 }
 
@@ -247,87 +245,88 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.po-row-dot {
-  flex: none;
-}
-
 .po-row-main {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
 }
 
-/* Chinese task title first, delivery state beside it. */
-.po-row-primary {
+/* Task heading: 13px medium, up to two lines, full text kept in the title. */
+.po-row-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsw-font-xs-13-font-size);
+  font-weight: var(--dsw-font-xs-strong-13-font-weight);
+  line-height: var(--dsw-font-xs-strong-13-line-height);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Directory id fallback when no readable title identified the task. */
+.po-row-id {
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: var(--dsw-font-xxs-12-line-height);
+  overflow-wrap: anywhere;
+}
+
+.po-row-meta {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.po-row-title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* Directory id: the row's `title` carries it in full; it is only shown when no
-   readable title identified the task. */
-.po-row-id {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsw-font-xxxs-11-font-size);
-  line-height: 15px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.po-row-status {
-  display: inline-flex;
+.po-row-dot {
   flex: none;
-  align-items: center;
-  max-width: 60%;
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsw-font-xxxs-11-font-size);
-  line-height: 16px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
-.po-row-status-warn {
-  color: var(--dsw-alias-state-warn-primary);
+/* Readable secondary status, not a near-transparent caption. */
+.po-row-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .po-row-actions {
   display: flex;
   flex: none;
-  gap: 4px;
+  gap: 2px;
+  margin-left: auto;
 }
 
 /*
- * Row actions: one geometry and one state set for both buttons. Disabled means
- * "this document was never generated": no hover, no hand cursor, dimmed label.
+ * Document entries: an icon plus a label, borderless until hover. Disabled means
+ * "this document was never generated" or "this Host has no native preview": no
+ * hover, dimmed label, reason in the tooltip.
  */
 .po-action {
   display: inline-flex;
   align-items: center;
-  height: 24px;
-  padding: 0 8px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  gap: 3px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
   border-radius: var(--dsw-radius-xs);
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   font-family: inherit;
   font-size: var(--dsw-font-xxxs-11-font-size);
   line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.po-action-icon {
+  flex: none;
 }
 
 .po-action:hover:not(:disabled),
@@ -337,7 +336,6 @@
 }
 
 .po-action:disabled {
-  border-color: transparent;
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
 }
@@ -350,12 +348,11 @@
     max-width: calc(100vw - 24px);
   }
 
-  .po-row {
+  .po-row-meta {
     flex-wrap: wrap;
   }
 
   .po-row-actions {
-    width: 100%;
-    justify-content: flex-end;
+    margin-left: 0;
   }
 }

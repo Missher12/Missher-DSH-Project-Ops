@@ -17,7 +17,15 @@ export interface CollectArgs { taskId: string; manifestDigest: string; jobId: st
 export interface PlanArgs { changedFiles: string[]; goal: PlanGoal }
 export interface GateArgs extends PlanArgs { planDigest: string; receipts: ExecutionReceipt[] }
 export interface ExecutionResult { nestedContent: unknown[]; receipt: ExecutionReceipt }
-export interface HostCapabilities { host: string; version: string; foreground: boolean; background: boolean; cancellation: boolean }
+export interface HostCapabilities {
+  host: string
+  version: string
+  foreground: boolean
+  background: boolean
+  cancellation: boolean
+  /** Precise reasons for anything this Host cannot do; empty when nothing is degraded. */
+  notes?: string[]
+}
 
 /** Trusted host bridge. All execution must retain native owner, policy, sandbox and cancellation context. */
 export interface ProjectOpsHost<Call = unknown> {
@@ -197,11 +205,19 @@ export class ProjectOpsService<Call = unknown> {
   }
 
   async doctor(call: Call) {
-    const scope = await this.scope(call)
     const capabilities = this.host.capabilities(call)
-    return { apiVersion: 1, ...capabilities, executionAdapter: this.host.execute !== undefined,
-      collectionAdapter: this.host.collect !== undefined, sourceSnapshot: await this.snapshot(scope, call) !== undefined,
+    const base = { apiVersion: 1, ...capabilities, executionAdapter: this.host.execute !== undefined,
+      collectionAdapter: this.host.collect !== undefined,
       runnerDependencies: 'unknown', guidance: 'Host must expose tools and load the packaged Agent contract.' }
+    try {
+      const scope = await this.scope(call)
+      return { ...base, scope: 'available' as const, sourceSnapshot: await this.snapshot(scope, call) !== undefined }
+    } catch (error) {
+      // Diagnostic tool: a Host that cannot scope must see the precise reason
+      // here rather than an exception from the one tool meant to explain it.
+      return { ...base, scope: 'unavailable' as const, sourceSnapshot: false,
+        notes: [...capabilities.notes ?? [], error instanceof Error ? error.message : String(error)] }
+    }
   }
 
   async cancel(call: Call, executionId: string): Promise<void> {

@@ -79,8 +79,21 @@ function runtimeExports(directory) {
 }
 
 const themeDir = resolvePackage('@deepseek-ai/dsh-client-ui-theme')
-const primitivesDir = resolvePackage('@deepseek-ai/dsh-client-ui-primitives')
 const shellDir = resolvePackage('@deepseek-ai/dsh-web-frontend')
+/**
+ * The primitives are a web platform module. Some installs (the official alpha
+ * line) inline them into the shell instead of linking the standalone package, so
+ * an absent directory is not a missing service: the export-level proof is then
+ * recorded as unverifiable here and left to a real module load.
+ */
+function optionalPackage(name) {
+  try {
+    return resolvePackage(name)
+  } catch {
+    return undefined
+  }
+}
+const primitivesDir = optionalPackage('@deepseek-ai/dsh-client-ui-primitives')
 
 // 1. Stylesheet tokens against the installed official theme.
 const themeSource = readFileSync(join(themeDir, 'lib/client.js'), 'utf8')
@@ -104,14 +117,39 @@ for (const file of clientSources) {
   }
 }
 assert(primitiveImports.size > 0, 'no platform primitives import found to verify')
-const primitives = runtimeExports(primitivesDir)
-const missingExports = [...primitiveImports].filter(name => !primitives.names.has(name)).sort()
 
 // The shell's platform module table is what makes those specifiers resolvable.
 const shellAssets = readdirSync(join(shellDir, 'dist/assets')).filter(name => name.endsWith('.js'))
 const shellText = shellAssets.map(name => readFileSync(join(shellDir, 'dist/assets', name), 'utf8')).join('\n')
 const platformRows = ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-ui-slots']
 const missingRows = platformRows.filter(row => !shellText.includes(`"${row}"`))
+
+/** Export-level proof, or an explicit statement that it needs a real load. */
+function primitiveProof() {
+  if (primitivesDir !== undefined) {
+    const primitives = runtimeExports(primitivesDir)
+    return {
+      source: 'standalone package exports',
+      version: versionOf(primitivesDir),
+      runtimeEntry: primitives.entry,
+      exports: primitives.names.size,
+      missingExports: [...primitiveImports].filter(name => !primitives.names.has(name)).sort(),
+      unverified: [],
+    }
+  }
+  // No standalone package: the shell table is the only static evidence, and it
+  // proves presence, not the export surface. The export check stays unverified
+  // instead of being reported as passed.
+  return {
+    source: 'web shell platform module table (primitives inlined; no standalone package)',
+    version: versionOf(shellDir),
+    runtimeEntry: null,
+    exports: null,
+    missingExports: [...primitiveImports].filter(name => !shellText.includes(name)).sort(),
+    unverified: ['client primitives export-level check requires a real module load on this Host'],
+  }
+}
+const proof = primitiveProof()
 
 // 3. The built browser bundle.
 const bundlePath = join(root, 'lib/browser/client.js')
@@ -124,11 +162,11 @@ const report = {
   projectRoot,
   host: {
     theme: { path: themeDir, version: versionOf(themeDir), definedTokens: defined.size },
-    primitives: { path: primitivesDir, version: versionOf(primitivesDir), runtimeEntry: primitives.entry, exports: primitives.names.size },
+    primitives: { path: primitivesDir ?? null, ...proof },
     webShell: { path: shellDir, version: versionOf(shellDir), platformRowsFound: platformRows.filter(row => !missingRows.includes(row)) },
   },
   stylesheet: { path: sheetPath, tokensRead: read, undefinedTokens },
-  platformImports: { primitives: [...primitiveImports].sort(), missingExports },
+  platformImports: { primitives: [...primitiveImports].sort(), missingExports: proof.missingExports },
   bundle: {
     path: bundlePath,
     bytes: Buffer.byteLength(bundle),
@@ -141,17 +179,20 @@ const report = {
 }
 const failures = [
   ...undefinedTokens.map(token => `stylesheet reads an undefined theme token: ${token}`),
-  ...missingExports.map(name => `platform export missing from the installed artifact: ${name}`),
+  ...proof.missingExports.map(name => proof.source === 'standalone package exports'
+    ? `platform export missing from the installed artifact: ${name}`
+    : `the web shell does not carry the platform name ${name}`),
   ...missingRows.map(row => `the web shell's platform table does not expose: ${row}`),
   ...(report.bundle.carriesStylesheet ? [] : ['the built bundle does not carry the stylesheet text']),
   ...(report.bundle.registersId ? [] : [`the built bundle does not register id ${id}`]),
   ...required.filter(specifier => !platformRows.includes(specifier)).map(specifier => `the built bundle requires a non-platform module: ${specifier}`),
 ]
 report.failures = failures
+report.unverified = proof.unverified
 report.passed = failures.length === 0
 const directory = join(root, '.artifacts/ui-contract')
 mkdirSync(directory, { recursive: true })
 const reportPath = join(directory, 'report.json')
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n')
-console.log(JSON.stringify({ passed: report.passed, evidence: reportPath, failures, requires: required }))
+console.log(JSON.stringify({ passed: report.passed, evidence: reportPath, failures, unverified: report.unverified, primitiveProof: proof.source, requires: required }))
 if (failures.length > 0) process.exitCode = 1

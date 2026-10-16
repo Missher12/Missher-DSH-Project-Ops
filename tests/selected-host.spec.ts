@@ -11,37 +11,64 @@ mkdirSync(parent, { recursive: true })
 const directory = mkdtempSync(join(parent, 'negative-'))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
+/** Run one verification script against a synthetic Host root. */
+function runScript(script, host, extraEnv = {}) {
+  return spawnSync(process.execPath, [join(root, 'scripts', script)], {
+    cwd: root, encoding: 'utf8', timeout: 20000,
+    env: { ...process.env, PROJECT_OPS_HOST_ROOT: host,
+      PROJECT_OPS_ARCHIVE: join(root, 'dsh-project-ops-0.3.1.tgz'),
+      PROJECT_OPS_ARCHIVE_SHA256: '9fed65a24615211a06867223fd6f5510f51e9f775522294ead3a1d7a8fbe98c9',
+      PROJECT_OPS_NODE: join(directory, 'must-not-launch-node'),
+      ...extraEnv },
+  })
+}
+
 for (const script of ['check-declarations.mjs', 'smoke-profile.mjs']) {
   describe(script, () => {
-    for (const state of ['missing', 'empty', 'empty-install', 'wrong-version']) {
+    // A Host root that is absent, empty, or an empty install must be rejected as
+    // a Host problem, before any archive, Node or CLI work is attempted.
+    for (const state of ['missing', 'empty', 'empty-install']) {
       test(`rejects selected ${state} host below installed development ancestors`, () => {
         const host = join(directory, script, state)
         if (state !== 'missing') mkdirSync(host, { recursive: true })
-        if (state === 'empty-install' || state === 'wrong-version') {
+        if (state === 'empty-install') {
           writeFileSync(join(host, 'package.json'), '{"private":true}')
           mkdirSync(join(host, 'node_modules'))
         }
-        if (state === 'wrong-version') {
-          const name = script === 'smoke-profile.mjs' ? '@deepseek-ai/dsh' : '@deepseek-ai/cordis'
-          const pkg = join(host, 'node_modules', name)
-          mkdirSync(pkg, { recursive: true })
-          writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name, version: '0.0.0' }))
-        }
-        const result = spawnSync(process.execPath, [join(root, 'scripts', script)], {
-          cwd: root, encoding: 'utf8', timeout: 20000,
-          env: { ...process.env, PROJECT_OPS_HOST_ROOT: host,
-            PROJECT_OPS_ARCHIVE: join(root, 'dsh-project-ops-0.3.1.tgz'),
-            PROJECT_OPS_ARCHIVE_SHA256: '9fed65a24615211a06867223fd6f5510f51e9f775522294ead3a1d7a8fbe98c9',
-            PROJECT_OPS_NODE: join(directory, 'must-not-launch-node') },
-        })
+        const result = runScript(script, host)
         expect(result.error).toBeUndefined()
         expect(result.status).not.toBe(0)
         expect(result.stderr).toContain('selected host')
-        if (state === 'wrong-version') expect(result.stderr).toContain('version mismatch')
       }, 25000)
     }
   })
 }
+
+describe('explicit Host pins and identity checks', () => {
+  test('rejects a Host that does not match an explicit PROJECT_OPS_HOST_VERSION pin', () => {
+    const host = join(directory, 'pinned-mismatch')
+    const pkg = join(host, 'node_modules/@deepseek-ai/dsh')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(host, 'package.json'), '{"private":true}')
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.0.0' }))
+    const result = runScript('smoke-profile.mjs', host, { PROJECT_OPS_HOST_VERSION: '0.2.1-alpha.2' })
+    expect(result.error).toBeUndefined()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('version mismatch')
+  }, 25000)
+
+  test('rejects a Host whose installed peer manifest is not the package it claims to be', () => {
+    const host = join(directory, 'declarations-impostor')
+    const pkg = join(host, 'node_modules/@deepseek-ai/cordis')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(host, 'package.json'), '{"private":true}')
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@deepseek-ai/not-cordis', version: '4.0.4' }))
+    const result = runScript('check-declarations.mjs', host)
+    expect(result.error).toBeUndefined()
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('name mismatch')
+  }, 25000)
+})
 
 test('accepts explicit pnpm package links and records logical and real manifests', () => {
   const host = join(directory, 'linked-host')
@@ -53,8 +80,12 @@ test('accepts explicit pnpm package links and records logical and real manifests
   const selected = createHostResolver(host)
   const actual = selected.resolvePackage('@deepseek-ai/cordis', '4.0.5-alpha.1')
   expect(actual.manifestPath).toBe(realpathSync(join(source, 'package.json')))
+  expect(actual.version).toBe('4.0.5-alpha.1')
+  expect(actual.sha256).toMatch(/^[a-f0-9]{64}$/u)
   expect(selected.installation.packages['@deepseek-ai/cordis'].anchor)
     .toBe(join(modules, '@deepseek-ai/cordis/package.json'))
+  // Without an explicit pin the installed version is recorded, not compared.
+  expect(selected.resolvePackage('@deepseek-ai/cordis').version).toBe('4.0.5-alpha.1')
   // An installed sibling at the development ancestor cannot fill a missing host link.
   expect(() => selected.resolvePackage('@deepseek-ai/dsh', '0.2.1-alpha.2')).toThrow('selected host')
 })
