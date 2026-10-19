@@ -6,6 +6,8 @@ Project Ops 入口跟随宿主提供的共享文字基线，与会话标题、�
 
 冻结安装包 `missher-dsh-project-ops-0.4.1.tgz`，SHA-256 `be7941410e67e9c13564180b2282e33d5747a126727bf1f089415e416dd6439d`。源码交付与正式 Release 分开记录：下载资产是否已发布以 [Releases](https://github.com/Missher12/Missher-DSH-Project-Ops/releases) 为准。
 
+[本版正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.1) 已公开，非草稿、非预发布；安装包与校验文件已匿名下载复核，摘要与本机安装候选一致。当前 Ubuntu 已安装并完成标题栏原生截图检查。
+
 ## 历史交付
 
 Project Ops 0.4.0

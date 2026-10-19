@@ -15,7 +15,7 @@
     "lib/client/index.d.ts": "aa9f35b8129176491c6f67b342d71bead7e74c3dafe5986be96edadeaaceae8f",
     "lib/index.d.ts": "36adfa8ad896593fdfd884d2768b355322c9b7aa9eda591eb63312eec94ea5d7"
   },
-  "published": false,
+  "published": true,
   "validation": {
     "scope": "Header-only update; prior broader acceptance is retained as historical evidence below",
     "focusedTestsPassed": 15,
@@ -120,5 +120,14 @@
       ],
       "deliveryDiffCheckWarning": "Frozen source src/receipt-schema.ts:24 contains a final blank line retained from prior delivery; no production edit or hook bypass."
     }
+  },
+  "release": {
+    "url": "https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.1",
+    "id": 417159452,
+    "tag": "v0.4.1",
+    "commit": "be3af3bffaa0cf069cad6b280c734f1e406b6924",
+    "draft": false,
+    "prerelease": false,
+    "anonymousDownloadsMatched": true
   }
 }
