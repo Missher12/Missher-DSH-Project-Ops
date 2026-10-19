@@ -1,7 +1,7 @@
 /*
  * Project Ops session-header panel.
  *
- * Every token below is defined by the official theme of the target Host
+ * Theme tokens below are defined by the official theme of the target Host
  * (`@deepseek-ai/dsh-client-ui-theme`, 0.2.1-alpha.2); none is a token that
  * only exists in unpublished sources. Light and dark themes are inherited
  * automatically, so this file declares no color of its own.
@@ -53,6 +53,8 @@
 }
 
 .po-trigger-label {
+  /* Hosts without the shared header baseline keep the trigger alignment. */
+  align-self: var(--dsh-conversation-header-label-align, auto);
   white-space: nowrap;
 }
 
