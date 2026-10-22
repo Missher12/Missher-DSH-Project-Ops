@@ -1,6 +1,6 @@
 {
   "name": "@missher/dsh-project-ops",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Project Ops：项目开发方案、交付记录与原生任务验证",
   "private": false,
   "type": "module",

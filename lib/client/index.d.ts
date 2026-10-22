@@ -14,7 +14,24 @@ declare const zh: {
   readonly error: "无法读取项目任务";
   readonly errorDetail: "读取失败，未修改任何文件：{error}";
   readonly retry: "重试";
-  readonly truncated: "任务较多，仅显示最近 100 项。";
+  readonly truncated: "宿主目录列表已达上限，仍可能有未列出的记录。";
+  readonly pending: "还有 {count} 个目录未检查。";
+  readonly more: "显示更多";
+  readonly 'search.placeholder': "检索标题或路径";
+  readonly 'search.aria': "检索交付记录";
+  readonly 'search.empty': "没有匹配的记录。";
+  readonly 'badge.root': "工作区根";
+  readonly 'badge.legacy': "旧版目录";
+  readonly 'badge.plain': "普通记录";
+  readonly 'root.title': "工作区根文档";
+  readonly 'problem.text': "未能完整读取：{error}";
+  readonly 'artifacts.label': "产物";
+  readonly 'artifacts.hint': "产物路径来自交付记录正文；存在产物不代表已验收、已发布或已安装。";
+  readonly 'summary.truncated': "摘要已截断，完整内容见 READY。";
+  readonly 'verify.label': "验收（会话报告）";
+  readonly 'verify.none': "无证据，未验证";
+  readonly 'verify.hint': "此句来自交付记录正文，是会话报告而非插件独立证明；缺失证据保持未验证。";
+  readonly 'source.hint': "相对位置：{path}";
   readonly 'status.current': "交付关联当前方案";
   readonly 'status.currentHint': "交付记录与当前方案修订一致；不代表验收通过、发布或安装。";
   readonly 'status.historical': "方案已更新";
@@ -37,28 +54,65 @@ declare const zh: {
 type ProjectOpsKey = keyof typeof zh;
 //#endregion
 //#region src/client/document-status.d.ts
-/** Read-only browser hints. Hash linkage is freshness evidence, not delivery acceptance. */
+/**
+ * Read-only browser hints for one workspace document pair.
+ *
+ * Hash linkage is freshness evidence, not delivery acceptance. A PLAN that
+ * carries no valid Project Ops record is not an error: it is a plain record the
+ * human has to check, and this module says so instead of inventing a status.
+ */
+/** Freshness of the delivery record against the current plan revision. */
 type DeliveryState = 'current' | 'historical' | 'inspect' | 'missing';
 //#endregion
 //#region src/client/task-view.d.ts
-/** One discovered task directory with its document presence and freshness. */
+/** Where one document pair was found. */
+type TaskOrigin = 'root' | 'tasks';
+/** One discovered PLAN/READY pair anywhere under the workspace root or `docs/tasks`. */
 interface TaskLink {
-  /** Directory name under `docs/tasks`, the task identity. */
+  /** `.` for the workspace root, else the `docs/tasks` entry name. */
   id: string;
-  /** `PLAN.md` exists and is readable. */
+  /** Workspace-relative directory of the documents: `.` or `docs/tasks/<id>`. */
+  path: string;
+  origin: TaskOrigin;
+  /** The directory name does not use the dated managed layout. */
+  legacy: boolean;
+  /** `PLAN.md` exists and was readable. */
   plan: boolean;
-  /** `READY.md` exists and is readable. */
+  /** `READY.md` exists and was readable. */
   ready: boolean;
-  /** Chinese task title read from the plan record, when it was readable. */
+  /** Managed title, or a plain document's first heading. */
   title?: string;
   /** Freshness of the delivery record against the current plan revision. */
   delivery: DeliveryState;
+  /** The PLAN decoded to a valid Project Ops record for this directory. */
+  managed: boolean;
+  /** Bounded artifact strings recorded by a licensed delivery report. */
+  artifacts: readonly string[];
+  /** At least one artifact summary was cut; the full record is in READY. */
+  artifactsTruncated?: boolean;
+  /** The verification sentence recorded with the delivery, bounded. */
+  verification?: string;
+  /** The verification sentence was cut; the full record is in READY. */
+  verificationTruncated?: boolean;
+  /** A metadata header was present but invalid; the row is a review item. */
+  damaged?: boolean;
+  /** Why this entry could not be read fully; the row stays visible. */
+  problem?: string;
 }
-/** One bounded read result. */
+/** One bounded batch of the delivery overview. */
 interface TaskListResult {
+  /** Rows of this batch; the workspace root row only appears in the first batch. */
   tasks: TaskLink[];
-  /** The workspace listing itself was truncated, or more than 100 tasks exist. */
+  /** Offset of the next batch; equals `total` when the candidate list is exhausted. */
+  nextOffset: number;
+  /** Candidate directories the Host listing exposed in total. */
+  total: number;
+  /** Candidate directories that are not examined yet. */
+  pending: number;
+  /** The Host's own directory listing hit its entry cap. */
   truncated: boolean;
+  /** Directory-level read failures that did not remove rows already found. */
+  warnings: string[];
 }
 //#endregion
 //#region src/client/index.d.ts
@@ -99,10 +153,12 @@ declare function optionalServices(ctx: Context): {
   /** The service, or `undefined` when this Host does not currently provide it. */
   get(name: OptionalService): unknown;
 };
+/** Candidate directories examined by one read; the next batch starts right after them. */
+declare const BATCH = 32;
 /**
  * Register the dictionaries, the stylesheet and the session-header action.
  * @param ctx - client root context.
  */
 declare function apply(ctx: Context): void;
 //#endregion
-export { OPTIONAL_SERVICES, OptionalService, type TaskLink, type TaskListResult, apply, inject, optionalServices };
+export { BATCH, OPTIONAL_SERVICES, OptionalService, type TaskLink, type TaskListResult, apply, inject, optionalServices };

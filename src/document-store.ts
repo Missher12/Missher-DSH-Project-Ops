@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { FsTarget, FsVersion, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import { DOCUMENT_LIMIT, TASK_DIRECTORY, decodePlan, digest, encodePlan, parsePlan, parseReport, encodeReady, recoverReady, type TaskRecord, type TaskStatus } from './task-documents.ts'
+import { DOCUMENT_LIMIT, TASK_DIRECTORY, decodePlan, digest, encodePlan, mergePlan, parsePlan, parseReport, encodeReady, recoverReady, type TaskRecord, type TaskStatus } from './task-documents.ts'
 
 interface ObservedFile { target: FsTarget; content: string | undefined; version: FsVersion | undefined }
 /** Filesystem operations use the Host provider, policy, observation guard, and atomic writes. */
@@ -117,9 +117,13 @@ export class DocumentStore {
   async update(taskId: string, revision: number, value: unknown, status: TaskStatus, exec: ToolRunContext) {
     return this.mutate(taskId, exec, async () => {
       const saved = await this.get(taskId, exec)
-      const plan = parsePlan(value)
-      if (saved.record.status === status && JSON.stringify(saved.record.plan) === JSON.stringify(plan) && !saved.record.delivery) return this.summary(saved.record)
+      // The caller asked to update the revision it read: reject a stale revision
+      // before merging or short-circuiting, so an old revision can never look
+      // like a no-op success — even when the patch is empty or repeats values.
       if (saved.record.revision !== revision) throw new Error('Stale task revision; read current PLAN before updating')
+      // A partial update merges over the record read right here.
+      const plan = mergePlan(saved.record.plan, value)
+      if (saved.record.status === status && JSON.stringify(saved.record.plan) === JSON.stringify(plan) && !saved.record.delivery) return this.summary(saved.record)
       if (saved.record.delivery && !saved.readyValid) throw new Error('READY manually edited or missing; preserve and reconcile it')
       const record: TaskRecord = { ...saved.record, plan, status, revision: revision + 1 }
       if (record.delivery) record.previousReadyHash = record.delivery.readyHash

@@ -138,3 +138,57 @@ test('finish retries bind the previous revision, and fresh evidence can replace 
   expect(second.revision).toBe(3); expect(second.verification).toBe('新的原生回执验证')
   await expect(f.store.finish(a.taskId, 1, report, '过期请求', f.exec)).rejects.toThrow('Stale task revision')
 })
+
+test('a partial update changes only the supplied fields and keeps the rest of the plan', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  // The reported failure: a progress-only update must not require the title.
+  const updated = await f.store.update(a.taskId, 1, { progress: '实现中，稍后补验收' }, 'active', f.exec)
+  expect(updated.revision).toBe(2)
+  const saved = (await f.store.get(a.taskId, f.exec)).record.plan
+  expect(saved.title).toBe(plan.title)
+  expect(saved.requirements).toBe(plan.requirements)
+  expect(saved.design).toBe(plan.design)
+  expect(saved.steps).toEqual(plan.steps)
+  expect(saved.acceptance).toEqual(plan.acceptance)
+  expect(saved.progress).toBe('实现中，稍后补验收')
+  // A complete six-field payload still behaves exactly like before.
+  const complete = await f.store.update(a.taskId, 2, { ...plan, progress: '完成' }, 'active', f.exec)
+  expect(complete.revision).toBe(3)
+  expect((await f.store.get(a.taskId, f.exec)).record.plan).toEqual({ ...plan, progress: '完成' })
+})
+
+test('an upward revision change is required before merge: stale patches never look like a no-op success', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  await f.store.update(a.taskId, 1, { progress: '第一次进展' }, 'active', f.exec)
+  // Old revision with an identical patch: rejected, not silently accepted.
+  await expect(f.store.update(a.taskId, 1, { progress: '第一次进展' }, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Old revision with an empty patch: also rejected.
+  await expect(f.store.update(a.taskId, 1, {}, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Old revision with the complete, unchanged plan: rejected.
+  await expect(f.store.update(a.taskId, 1, { ...plan, progress: '第一次进展' }, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Current revision with an empty patch is a legitimate no-op, not a fabricated write.
+  const noop = await f.store.update(a.taskId, 2, {}, 'active', f.exec)
+  expect(noop.revision).toBe(2)
+  // Current revision with the same content is likewise the same record.
+  expect((await f.store.update(a.taskId, 2, { progress: '第一次进展' }, 'active', f.exec)).revision).toBe(2)
+})
+
+test('partial update rejects null, empty, wrong types and unknown fields by name, and never writes', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  const before = readFileSync(join(f.cwd, 'docs/tasks', a.taskId, 'PLAN.md'), 'utf8')
+  await expect(f.store.update(a.taskId, 1, { title: null }, 'active', f.exec)).rejects.toThrow(/Invalid title: expected a string, received null/u)
+  await expect(f.store.update(a.taskId, 1, { title: '   ' }, 'active', f.exec)).rejects.toThrow(/Invalid title: the string is empty/u)
+  await expect(f.store.update(a.taskId, 1, { title: 42 }, 'active', f.exec)).rejects.toThrow(/Invalid title: expected a string, received a number/u)
+  await expect(f.store.update(a.taskId, 1, { steps: 'one' }, 'active', f.exec)).rejects.toThrow(/Invalid steps: expected an array/u)
+  await expect(f.store.update(a.taskId, 1, { titel: 'typo' }, 'active', f.exec)).rejects.toThrow(/Unknown PLAN field\(s\): titel/u)
+  // Every rejection above left the file, the revision and the record untouched.
+  expect(readFileSync(join(f.cwd, 'docs/tasks', a.taskId, 'PLAN.md'), 'utf8')).toBe(before)
+  expect((await f.store.get(a.taskId, f.exec)).record.revision).toBe(1)
+})
+
+test('begin names the missing field instead of a bare range message', async () => {
+  const f = await fixture()
+  await expect(f.store.begin('feature', { ...plan, title: undefined }, f.exec))
+    .rejects.toThrow(/Invalid title: expected a string, received nothing \(field absent\)/u)
+  expect(await f.store.list(f.exec)).toEqual([])
+})

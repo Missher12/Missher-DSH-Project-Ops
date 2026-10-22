@@ -34,22 +34,75 @@ export interface TaskRecord {
   delivery?: { report: DeliveryReport; verification: string; readyHash: string }
 }
 export function digest(text: string): string { return createHash('sha256').update(text).digest('hex') }
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a document object')
+
+/** The complete PLAN field set. `begin` requires all of them; `update` accepts any subset. */
+export const PLAN_FIELDS = ['title', 'requirements', 'design', 'steps', 'acceptance', 'progress'] as const
+
+/** Upper bounds the validators enforce; values are rejected, never truncated. */
+const TEXT_LIMIT = 16000
+const ITEM_LIMIT = 80
+
+/** What a caller actually passed, named so an error can say "received null" instead of just "invalid". */
+function received(value: unknown): string {
+  if (value === undefined) return 'nothing (field absent)'
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'an array'
+  return `a ${typeof value}`
+}
+
+function object(value: unknown, label = 'data'): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${label}: expected an object, received ${received(value)}.`)
   return value as Record<string, unknown>
 }
 function text(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 16000 || value.includes('\u0000')) throw new Error(`Invalid ${label}: provide 1–16000 characters`)
+  if (typeof value !== 'string') throw new Error(`Invalid ${label}: expected a string, received ${received(value)}. Provide 1–${TEXT_LIMIT} characters.`)
+  if (!value.trim()) throw new Error(`Invalid ${label}: the string is empty. Provide 1–${TEXT_LIMIT} characters.`)
+  if (value.length > TEXT_LIMIT) throw new Error(`Invalid ${label}: ${value.length} characters exceeds the ${TEXT_LIMIT}-character limit. Shorten the value; it is never truncated for you.`)
+  if (value.includes('\u0000')) throw new Error(`Invalid ${label}: the string contains a NUL character. Remove it and retry.`)
   return value
 }
 function texts(value: unknown, label: string, empty = false): string[] {
-  if (!Array.isArray(value) || value.length > 80 || (!empty && value.length === 0)) throw new Error(`Invalid ${label}: provide ${empty ? 0 : 1}–80 items`)
-  return value.map(item => text(item, label))
+  if (!Array.isArray(value)) throw new Error(`Invalid ${label}: expected an array of strings, received ${received(value)}. Provide ${empty ? 0 : 1}–${ITEM_LIMIT} items.`)
+  if (value.length > ITEM_LIMIT) throw new Error(`Invalid ${label}: ${value.length} items exceeds the ${ITEM_LIMIT}-item limit. Remove items; they are never truncated for you.`)
+  if (!empty && value.length === 0) throw new Error(`Invalid ${label}: at least 1 item is required.`)
+  return value.map((item, index) => text(item, `${label}[${index}]`))
 }
 export function parsePlan(value: unknown): DevelopmentPlan {
   const row = object(value)
   const result = { title: text(row.title, 'title'), requirements: text(row.requirements, 'requirements'), design: text(row.design, 'design'), steps: texts(row.steps, 'steps'), acceptance: texts(row.acceptance, 'acceptance'), progress: text(row.progress, 'progress') }
-  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Acceptance criteria must be unique')
+  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Invalid acceptance: criteria must be unique.')
+  return result
+}
+
+/**
+ * Merge a partial PLAN update over the record read at `expectedRevision`.
+ *
+ * Only an **absent** field (`undefined`) keeps its current value, so an update
+ * carrying just `progress` no longer has to repeat the title. `null`, an empty
+ * value, a wrong type and an unknown field are rejected with the field name: a
+ * typo can never look like a successful update, and nothing is fabricated or
+ * truncated. A full six-field object behaves exactly like {@link parsePlan}.
+ * @param current - the plan stored in the record read before this update.
+ * @param value - the partial or complete PLAN object supplied by the caller.
+ * @returns the merged plan, validated as a whole.
+ */
+export function mergePlan(current: DevelopmentPlan, value: unknown): DevelopmentPlan {
+  const row = object(value)
+  const unknown = Object.keys(row).filter(key => !(PLAN_FIELDS as readonly string[]).includes(key))
+  if (unknown.length > 0) {
+    throw new Error(`Unknown PLAN field(s): ${unknown.join(', ')}. Allowed fields: ${PLAN_FIELDS.join(', ')}. Omit a field to keep its current value.`)
+  }
+  const field = <K extends keyof DevelopmentPlan>(key: K, parse: (input: unknown, label: string) => DevelopmentPlan[K]): DevelopmentPlan[K] =>
+    row[key] === undefined ? current[key] : parse(row[key], key)
+  const result: DevelopmentPlan = {
+    title: field('title', text),
+    requirements: field('requirements', text),
+    design: field('design', text),
+    steps: field('steps', (input, label) => texts(input, label)),
+    acceptance: field('acceptance', (input, label) => texts(input, label)),
+    progress: field('progress', text),
+  }
+  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Invalid acceptance: criteria must be unique.')
   return result
 }
 export function parseReport(value: unknown, plan: DevelopmentPlan): DeliveryReport {

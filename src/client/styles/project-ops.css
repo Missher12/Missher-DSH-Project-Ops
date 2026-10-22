@@ -133,6 +133,35 @@
   text-overflow: ellipsis;
 }
 
+/* Local search over the loaded page; the field joins the panel's Tab order. */
+.po-toolbar {
+  display: flex;
+  flex: none;
+  padding: 1px 6px 6px;
+}
+
+.po-search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: 18px;
+}
+
+.po-search::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.po-search:focus-visible {
+  border-color: var(--dsw-alias-border-l3);
+}
+
 .po-icon-button {
   display: inline-flex;
   flex: none;
@@ -268,6 +297,96 @@
   -webkit-line-clamp: 2;
 }
 
+/* Relative location and provenance; a technical path stays secondary. */
+.po-row-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-row-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+/* Bounded artifact excerpt from a managed delivery report; never a link. */
+.po-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-artifacts-label {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-artifact {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.po-artifact-note {
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+/* Verification is a session report; the label makes that explicit. */
+.po-verify {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-verify-label {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-verify-text {
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A read problem keeps the row visible and explains itself. */
+.po-row-problem {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
 /* Directory id fallback when no readable title identified the task. */
 .po-row-id {
   color: var(--dsw-alias-label-secondary);
@@ -338,6 +457,41 @@
 }
 
 .po-action:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/* Continuation of the bounded page cursor. */
+.po-more-row {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  padding: 4px 6px 2px;
+}
+
+.po-more {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.po-more:hover:not(:disabled),
+.po-more:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-more:disabled {
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
 }

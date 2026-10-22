@@ -22,14 +22,24 @@ export function registerDocumentTools(ctx: Context, service: ProjectOpsService<T
   }))
   ctx.tools.register(defineTool({
     name: 'missher_project_ops_document_write',
-    description: 'Project Ops: explicitly begin/update a substantial authorized development task, or record delivery after acceptance review. Reuses Host Session, permissions and filesystem. Never pushes Git or calls another model. PLAN data: title, requirements, design, steps[], acceptance[], progress. Finish data: implementation, checks[{criterion,status:reported-pass|failed|unverified,evidence}], artifacts[], git, release, installation, limitations[], rollback. Evidence text is a Session report, not automatic proof. Failed/cancelled tasks require explicit active update before finish. Continue authorized work after writing PLAN.',
+    description: [
+      'Project Ops: explicitly begin/update a substantial authorized development task, or record delivery after acceptance review.',
+      'Reuses Host Session, permissions and filesystem. Never pushes Git or calls another model.',
+      'begin requires the complete PLAN and a slug. Fields: title, requirements, design, steps[], acceptance[], progress.',
+      'Minimal begin example: {"action":"begin","slug":"fix-panel","data":{"title":"修复面板","requirements":"…","design":"…","steps":["实现"],"acceptance":["可读"],"progress":"开始"}}.',
+      'update accepts a PARTIAL PLAN: only the fields you pass change, every absent field keeps its current value, and taskId plus expectedRevision from document_read are required.',
+      'Passing null, an empty string or an unknown field is an error that names the field — omit a field to keep it.',
+      'Status update is optional: active, failed or cancelled; failed/cancelled never means complete.',
+      'finish data (complete): implementation, checks[{criterion,status:reported-pass|failed|unverified,evidence}], artifacts[], git, release, installation, limitations[], rollback.',
+      'Evidence text is a Session report, not automatic proof. Continue authorized work after writing PLAN.',
+    ].join(' '),
     parameters: {
       action: { type: 'string', enum: ['begin', 'update', 'finish'], required: true },
       slug: { type: 'string', description: 'Begin only: short lowercase ASCII task name.' },
       taskId: { type: 'string', description: 'Exact taskId returned by begin/read; required for update/finish.' },
       expectedRevision: { type: 'integer', description: 'Revision read from PLAN, required for update/finish.' },
       status: { type: 'string', enum: ['active', 'failed', 'cancelled'], description: 'Update only; cancellation/failure never means complete.' },
-      data: { type: 'json', required: true, description: 'PLAN or delivery report object, as described above. No secrets or full private conversations.' },
+      data: { type: 'json', required: true, description: 'begin: all six PLAN fields (title, requirements, design, steps[], acceptance[], progress). update: any subset of those fields; absent fields keep their current value, and null/empty/wrong types are rejected by field name. finish: the complete delivery report. No secrets or full private conversations.' },
       verification: { type: 'object', additionalProperties: false, properties: { changedFiles: { type: 'array', items: { type: 'string' }, required: true }, goal: { type: 'string', enum: ['verify', 'build', 'all'], required: true }, planDigest: { type: 'string', required: true }, receipts: { type: 'array', items: RECEIPT_SCHEMA, required: true } }, description: 'Finish only: existing verification_gate arguments; missing evidence remains unverified.' },
     },
     output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }] },

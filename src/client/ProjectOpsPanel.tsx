@@ -2,10 +2,15 @@
  * Presentational half of the Project Ops header action.
  *
  * These components hold no state and no hooks: the shell in
- * `ProjectOpsAction.tsx` owns opening, anchoring, dismissal and the bounded
- * read, and passes everything rendered here as props. Keeping the tree
- * hook-free is also what lets the tests call the components directly and walk
- * the returned element tree without a DOM.
+ * `ProjectOpsAction.tsx` owns opening, anchoring, dismissal, the bounded read
+ * and the current page, and passes everything rendered here as props. Keeping
+ * the tree hook-free is also what lets the tests call the components directly
+ * and walk the returned element tree without a DOM.
+ *
+ * A row never claims more than the files show: managed metadata drives the
+ * freshness status, a plain or legacy record is labelled as such, an artifact
+ * listing is a report body excerpt (never a release or an install), and a
+ * damaged entry stays visible with its reason.
  */
 import type { CSSProperties, ReactElement, RefObject } from 'react'
 import {
@@ -15,7 +20,7 @@ import {
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import { classNames, styles } from './styles.ts'
-import { taskView, type TaskLink, type TaskListResult } from './task-view.ts'
+import { filterTasks, taskView, type TaskLink, type TaskListResult } from './task-view.ts'
 
 /** Translate seat of this namespace, as injected by the slot framework. */
 export type PanelTranslate = TranslateNS<typeof NS>
@@ -56,13 +61,13 @@ export function ProjectOpsTrigger({ t, open, count, triggerRef, onToggle }: Trig
   )
 }
 
-/** Props of one task row. */
+/** Props of one delivery row. */
 export interface RowProps {
   t: PanelTranslate
   task: TaskLink
   /** Native preview availability; when absent both actions stay visible but disabled. */
   preview: PreviewAvailability
-  onOpen: (task: string, file: 'PLAN.md' | 'READY.md') => void
+  onOpen: (path: string, file: 'PLAN.md' | 'READY.md') => void
 }
 
 /** Optional native capabilities this Host exposes to the panel. */
@@ -84,10 +89,10 @@ export interface PreviewAvailability {
 }
 
 /**
- * One task: Chinese title first, delivery state beside it, the directory id in
- * the row's `title` (and as the primary line only when no title was readable),
- * and the two document actions on the trailing edge.
- * @param props - locale, discovered task and the preview opener.
+ * One delivery: heading, then its relative location and provenance badges, its
+ * bounded artifact excerpt when a managed report recorded one, the read problem
+ * when the entry is only partly readable, and the status plus document entries.
+ * @param props - locale, discovered row and the preview opener.
  * @returns the list item.
  */
 export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElement {
@@ -95,14 +100,39 @@ export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElem
   const statusHint = t(view.hint)
   const planDisabled = view.planDisabled || !preview.available
   const readyDisabled = view.readyDisabled || !preview.available
-  const planTitle = !preview.available ? preview.reason : view.planDisabled ? t('view.missingPlan') : `${t('view.plan')} · ${task.id}/PLAN.md`
-  const readyTitle = !preview.available ? preview.reason : view.readyDisabled ? t('view.missingReady') : `${t('view.ready')} · ${task.id}/READY.md`
+  const planTitle = !preview.available ? preview.reason : view.planDisabled ? t('view.missingPlan') : `${t('view.plan')} · ${task.path}/PLAN.md`
+  const readyTitle = !preview.available ? preview.reason : view.readyDisabled ? t('view.missingReady') : `${t('view.ready')} · ${task.path}/READY.md`
   return (
-    <li className={styles.row} title={`${task.id} · ${statusHint}`} data-task={task.id}>
+    <li className={styles.row} title={`${task.path} · ${statusHint}`} data-task={task.id} data-path={task.path}>
       <div className={styles.rowMain}>
         <div className={styles.rowTitle} title={view.hasTitle ? view.title : undefined}>
-          {view.hasTitle ? view.title : <span className={styles.rowId}>{view.id}</span>}
+          {view.hasTitle
+            ? view.title
+            : view.titleKey === undefined ? <span className={styles.rowId}>{view.id}</span> : t(view.titleKey)}
         </div>
+        <div className={styles.rowSource} title={t('source.hint', { path: view.source })}>
+          <span className={styles.rowPath}>{view.source}</span>
+          {view.badges.map(key => <span key={key} className={styles.badge}>{t(key)}</span>)}
+        </div>
+        {view.artifacts.length > 0
+          ? (
+            <div className={styles.artifacts} title={t('artifacts.hint')}>
+              <span className={styles.artifactsLabel}>{t('artifacts.label')}</span>
+              {view.artifacts.map(artifact => <span key={artifact} className={styles.artifact}>{artifact}</span>)}
+              {view.artifactsTruncated ? <span className={styles.artifactNote}>{t('summary.truncated')}</span> : null}
+            </div>
+          )
+          : null}
+        <div className={styles.verify} title={t('verify.hint')}>
+          <span className={styles.verifyLabel}>{t('verify.label')}</span>
+          <span className={styles.verifyText}>
+            {view.verification === undefined ? t('verify.none') : view.verification}
+            {view.verificationTruncated ? ` ${t('summary.truncated')}` : ''}
+          </span>
+        </div>
+        {view.problem === undefined
+          ? null
+          : <div className={styles.rowProblem}>{t('problem.text', { error: view.problem })}</div>}
         <div className={styles.rowMeta}>
           <StateDot state={view.dot} className={styles.rowDot} />
           {/* The amber stays on the dot: the warning label color does not meet
@@ -114,7 +144,7 @@ export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElem
               className={styles.action}
               disabled={planDisabled}
               title={planTitle}
-              onClick={() => { onOpen(task.id, 'PLAN.md') }}
+              onClick={() => { onOpen(task.path, 'PLAN.md') }}
             >
               <IconChecklistOutlineRegular size={12} className={styles.actionIcon} />
               <span>{t('view.plan')}</span>
@@ -124,7 +154,7 @@ export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElem
               className={styles.action}
               disabled={readyDisabled}
               title={readyTitle}
-              onClick={() => { onOpen(task.id, 'READY.md') }}
+              onClick={() => { onOpen(task.path, 'READY.md') }}
             >
               <IconDeliverDocRegular size={12} className={styles.actionIcon} />
               <span>{t('view.ready')}</span>
@@ -145,16 +175,21 @@ export interface PanelProps {
   /** Hidden-but-laid-out placement used for the first measurement. */
   measureStyle: CSSProperties
   panelRef: RefObject<HTMLElement>
-  /** Read result, absent until the first read settles. */
+  /** Read result for the current page, absent until the first read settles. */
   result: TaskListResult | undefined
   /** Read failure detail, absent when the last read succeeded. */
   error: string | undefined
   busy: boolean
   /** Optional native capabilities observed on this Host. */
   availability: PanelAvailability
+  /** Local search filter over the loaded page. */
+  query: string
+  onQuery: (value: string) => void
   onRefresh: () => void
+  /** Ask for the next bounded page; the shell grows the page size. */
+  onLoadMore: () => void
   onClose: () => void
-  onOpen: (task: string, file: 'PLAN.md' | 'READY.md') => void
+  onOpen: (path: string, file: 'PLAN.md' | 'READY.md') => void
 }
 
 /** One notice line for a capability this Host does not expose; the service name stays in the tooltip. */
@@ -168,15 +203,20 @@ function UnavailableNotice({ text, detail }: { text: string; detail: string }): 
 }
 
 /**
- * The panel surface: compact title line with refresh/close, one short read-only
- * hint, then the loading, empty, error, truncated or task-list body.
- * @param props - locale, placement, read state and the panel actions.
+ * The panel surface: compact title line with refresh/close, the local search
+ * field, then the loading, empty, error or delivery list body with its bounded
+ * paging and truncation notices.
+ * @param props - locale, placement, read state, page, filter and panel actions.
  * @returns the portaled panel, or `null` while closed.
  */
 export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
-  const { t, open, position, measureStyle, panelRef, result, error, busy, availability, onRefresh, onClose, onOpen } = props
+  const {
+    t, open, position, measureStyle, panelRef, result, error, busy, availability,
+    query, onQuery, onRefresh, onLoadMore, onClose, onOpen,
+  } = props
   if (!open) return null
   const preview = { available: availability.preview, reason: availability.previewReason ?? t('unavailable.preview') }
+  const visible = result === undefined ? [] : filterTasks(result.tasks, query)
   return (
     <section
       ref={panelRef}
@@ -232,7 +272,16 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           </div>
         )
         : null}
+      {availability.list && error === undefined && result !== undefined
+        ? result.warnings.map(warning => (
+          <div key={warning} className={styles.notice} role="status" title={warning}>
+            <IconInspectOutlineRegular size={14} />
+            <span>{t('problem.text', { error: warning })}</span>
+          </div>
+        ))
+        : null}
       {availability.list && error === undefined && result !== undefined && result.tasks.length === 0
+        && result.pending === 0 && result.warnings.length === 0
         ? (
           <div className={styles.notice} role="status">
             <IconArchiveOutlineRegular size={14} />
@@ -242,9 +291,36 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
         : null}
       {availability.list && error === undefined && result !== undefined && result.tasks.length > 0
         ? (
-          <ul className={styles.list}>
-            {result.tasks.map(task => <ProjectOpsRow key={task.id} t={t} task={task} preview={preview} onOpen={onOpen} />)}
-          </ul>
+          <>
+            <div className={styles.toolbar}>
+              <input
+                className={styles.search}
+                type="search"
+                value={query}
+                placeholder={t('search.placeholder')}
+                aria-label={t('search.aria')}
+                onChange={event => { onQuery(event.currentTarget.value) }}
+              />
+            </div>
+            {visible.length === 0
+              ? <div className={styles.notice} role="status">{t('search.empty')}</div>
+              : (
+                <ul className={styles.list}>
+                  {visible.map(task => (
+                    <ProjectOpsRow key={`${task.origin}:${task.id}`} t={t} task={task} preview={preview} onOpen={onOpen} />
+                  ))}
+                </ul>
+              )}
+          </>
+        )
+        : null}
+      {availability.list && error === undefined && result !== undefined && result.pending > 0
+        ? (
+          <div className={styles.moreRow}>
+            <button type="button" className={styles.more} onClick={onLoadMore} disabled={busy}>
+              {t('more')} · {t('pending', { count: result.pending })}
+            </button>
+          </div>
         )
         : null}
       {availability.list && error === undefined && result?.truncated === true

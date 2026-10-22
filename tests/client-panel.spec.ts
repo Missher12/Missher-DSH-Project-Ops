@@ -12,7 +12,7 @@ import { expect, test } from 'vitest'
 import { en, zh, type ProjectOpsKey } from '../src/client/locales.ts'
 import { ProjectOpsPanel, ProjectOpsRow, ProjectOpsTrigger } from '../src/client/ProjectOpsPanel.tsx'
 import { styles } from '../src/client/styles.ts'
-import { deliveryView, taskView, type TaskLink } from '../src/client/task-view.ts'
+import { deliveryView, taskView, type TaskLink, type TaskListResult } from '../src/client/task-view.ts'
 
 const dictionaries: Record<'zh' | 'en', Record<string, string>> = { zh, en }
 
@@ -53,12 +53,17 @@ function elements(node: ReactNode, found: ReactElement[] = [], depth = 0): React
   return found
 }
 
-/** Concatenated text of a rendered tree. */
+/** Concatenated text of a rendered tree: nested arrays, numbers and element children included. */
 function text(node: ReactNode): string {
-  return elements(node).map(element => {
-    const children = (element.props as { children?: ReactNode }).children
-    return typeof children === 'string' ? children : ''
-  }).join(' ')
+  const walk = (value: ReactNode): string => {
+    if (typeof value === 'string') return value
+    if (typeof value === 'number') return String(value)
+    if (Array.isArray(value)) return value.map(item => walk(item as ReactNode)).join(' ')
+    if (!isValidElement(value)) return ''
+    const expanded = expand(value) as ReactElement<{ children?: ReactNode }>
+    return walk(expanded.props?.children)
+  }
+  return walk(expand(node))
 }
 
 /** Host elements of one raw tree carrying a given class (the tree is walked once). */
@@ -77,7 +82,26 @@ const AVAILABLE = { list: true, preview: true }
 const PREVIEW = { available: true, reason: 'n/a' }
 
 function task(overrides: Partial<TaskLink> = {}): TaskLink {
-  return { id: '2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e', plan: true, ready: false, title: 'DSH 原生风格界面修订', delivery: 'missing', ...overrides }
+  return {
+    id: '2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e',
+    path: 'docs/tasks/2026-10-12-project-ops-dsh-native-ui-9ab213e2baf81a6e',
+    origin: 'tasks', legacy: false,
+    plan: true, ready: false, title: 'DSH 原生风格界面修订', delivery: 'missing',
+    managed: true, artifacts: [],
+    ...overrides,
+  }
+}
+
+/** One bounded page of the overview. */
+function page(tasks: TaskLink[], overrides: Partial<TaskListResult> = {}): TaskListResult {
+  return { tasks, nextOffset: tasks.length, total: tasks.length, pending: 0, truncated: false, warnings: [], ...overrides }
+}
+
+/** Panel props shared by the state tests; individual cases override the page. */
+const BASE: Omit<Parameters<typeof ProjectOpsPanel>[0], 'result' | 'error'> = {
+  t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false,
+  availability: AVAILABLE, query: '', onQuery: () => {}, onRefresh: () => {}, onLoadMore: () => {},
+  onClose: () => {}, onOpen: () => {},
 }
 
 test('locales keep one key set and describe links, never acceptance', () => {
@@ -113,7 +137,9 @@ test('a task row shows the Chinese title and hides the directory id behind title
   expect(withClass(tree, styles.rowTitle).length).toBe(1)
   expect(withClass(tree, styles.rowId).length).toBe(0)
   expect(text(tree)).toContain('DSH 原生风格界面修订')
-  expect(text(tree)).not.toContain('2026-10-12-project-ops')
+  // The heading stays the title; the relative location is a separate secondary line.
+  expect(text(withClass(tree, styles.rowTitle)[0]!)).toBe('DSH 原生风格界面修订')
+  expect(text(withClass(tree, styles.rowPath)[0]!)).toBe(task().path)
   // Short status on the metadata line; the acceptance boundary lives in its tooltip.
   expect(text(tree)).toContain('方案进行中')
   expect(text(tree)).not.toContain('不代表')
@@ -149,7 +175,7 @@ test('opening a document reports the task and file to the preview opener', () =>
   const tree = ProjectOpsRow({ t, task: task({ ready: true }), preview: PREVIEW, onOpen: (id, file) => { calls.push([id, file]) } })
   const actions = buttons(tree) as ReactElement<{ onClick: () => void }>[]
   actions[1]!.props.onClick()
-  expect(calls).toEqual([[task().id, 'READY.md']])
+  expect(calls).toEqual([[task().path, 'READY.md']])
 })
 
 test('the trigger is a plain labelled button, not a browser default face', () => {
@@ -166,12 +192,12 @@ test('the trigger is a plain labelled button, not a browser default face', () =>
 })
 
 test('the panel reports loading, empty, error and truncated states distinctly', () => {
-  const base = { t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false, availability: AVAILABLE, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
+  const base = BASE
   const loading = ProjectOpsPanel({ ...base, result: undefined, error: undefined })
   expect(String((withClass(loading, styles.skeleton)[0]!.props as { role?: string }).role)).toBe('status')
   expect(elements(loading).some(element => (element.props as { 'aria-label'?: string })['aria-label'] === '正在读取项目任务…')).toBe(true)
 
-  const empty = ProjectOpsPanel({ ...base, result: { tasks: [], truncated: false }, error: undefined })
+  const empty = ProjectOpsPanel({ ...base, result: page([]), error: undefined })
   expect(text(empty)).toContain('尚无开发任务')
   expect(withClass(empty, styles.row).length).toBe(0)
 
@@ -180,16 +206,17 @@ test('the panel reports loading, empty, error and truncated states distinctly', 
   expect(text(failure)).toContain('workspace-file/unavailable')
   expect(text(failure)).toContain('重试')
 
-  const truncated = ProjectOpsPanel({ ...base, result: { tasks: [task()], truncated: true }, error: undefined })
-  expect(text(truncated)).toContain('仅显示最近 100 项')
+  const truncated = ProjectOpsPanel({ ...base, result: page([task()], { truncated: true }), error: undefined })
+  // The Host listing cap is named; it is not a silent row limit.
+  expect(text(truncated)).toContain('宿主目录列表已达上限')
   expect(withClass(truncated, styles.row).length).toBe(1)
 })
 
 test('the panel exposes its title, refresh and close actions and a read-only hint', () => {
   const tree = ProjectOpsPanel({
+    ...BASE,
     t, open: true, position: { left: 10, top: 20 }, measureStyle: {}, panelRef: { current: null },
-    result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
-    onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
+    result: page([task()]), error: undefined,
   })
   const panel = elements(tree)
   const surface = panel[0]!
@@ -209,17 +236,16 @@ test('the panel exposes its title, refresh and close actions and a read-only hin
 
 test('a closed panel renders nothing at all', () => {
   expect(ProjectOpsPanel({
+    ...BASE,
     t, open: false, position: null, measureStyle: {}, panelRef: { current: null },
-    result: { tasks: [task()], truncated: false }, error: undefined, busy: true, availability: AVAILABLE,
-    onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
+    result: page([task()]), error: undefined, busy: true,
   })).toBeNull()
 })
 
 test('a Host without the workspace-files remote explains itself instead of showing an empty project', () => {
   const tree = ProjectOpsPanel({
     t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
-    result: undefined, error: undefined, busy: false, availability: { list: false, preview: true },
-    onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
+    ...BASE, result: undefined, error: undefined, availability: { list: false, preview: true },
   })
   const rendered = text(tree)
   expect(rendered).toContain('未提供工作区文件读取能力')
@@ -239,6 +265,70 @@ test('a Host without the native preview keeps the rows but disables both actions
   expect(actions.every(action => action.props.title === reason)).toBe(true)
   // The row itself is still listed: only the affected action is disabled.
   expect(text(tree)).toContain('DSH 原生风格界面修订')
+})
+
+test('a plain legacy row carries its provenance badges and relative location', () => {
+  const tree = ProjectOpsRow({
+    t, preview: PREVIEW, onOpen: () => {},
+    task: task({
+      id: '2026-10-01-old-layout', path: 'docs/tasks/2026-10-01-old-layout', origin: 'tasks',
+      legacy: true, managed: false, delivery: 'inspect', ready: true, title: '旧方案',
+    }),
+  })
+  expect(text(tree)).toContain('旧版目录')
+  expect(text(tree)).toContain('普通记录')
+  expect(text(withClass(tree, styles.rowPath)[0]!)).toBe('docs/tasks/2026-10-01-old-layout')
+})
+
+test('artifacts and the acceptance sentence are labelled as a session report, never as links', () => {
+  const tree = ProjectOpsRow({
+    t, preview: PREVIEW, onOpen: () => {},
+    task: task({ delivery: 'current', ready: true, artifacts: ['dist/a.tgz'], artifactsTruncated: true,
+      verification: '原生回执门未通过；等待复核', verificationTruncated: true }),
+  })
+  expect(text(tree)).toContain('产物')
+  expect(text(tree)).toContain('dist/a.tgz')
+  expect(text(tree)).toContain('摘要已截断')
+  expect(text(tree)).toContain('验收（会话报告）')
+  expect(text(tree)).toContain('原生回执门未通过；等待复核')
+  // An artifact excerpt is text: no link and no button is created for it.
+  expect(withClass(tree, styles.artifact).every(element => element.type === 'span')).toBe(true)
+})
+
+test('a damaged or unlinked record never reuses an old acceptance claim', () => {
+  const tree = ProjectOpsRow({
+    t, preview: PREVIEW, onOpen: () => {},
+    task: task({ delivery: 'inspect', ready: true, verification: '旧验收句子' }),
+  })
+  expect(text(tree)).toContain('验收（会话报告）')
+  expect(text(tree)).toContain('无证据，未验证')
+  expect(text(tree)).not.toContain('旧验收句子')
+})
+
+test('a row with a read problem keeps its place and explains itself', () => {
+  const tree = ProjectOpsRow({
+    t, preview: PREVIEW, onOpen: () => {},
+    task: task({ plan: false, ready: true, delivery: 'inspect', problem: 'read failed' }),
+  })
+  expect(text(tree)).toContain('未能完整读取：read failed')
+  expect(withClass(tree, styles.row).length).toBe(1)
+})
+
+test('the panel reports directory warnings instead of an empty workspace', () => {
+  const tree = ProjectOpsPanel({ ...BASE, result: page([], { warnings: ['listing failed for docs/tasks'] }), error: undefined })
+  expect(text(tree)).toContain('未能完整读取：listing failed for docs/tasks')
+  expect(text(tree)).not.toContain('尚无开发任务')
+})
+
+test('the panel offers the next bounded page and filters the loaded rows locally', () => {
+  const more = ProjectOpsPanel({ ...BASE, result: page([task()], { pending: 40, total: 41 }), error: undefined })
+  expect(text(more)).toContain('显示更多')
+  expect(text(more)).toContain('还有 40 个目录未检查')
+  const filtered = ProjectOpsPanel({ ...BASE, query: '不存在的检索词', result: page([task()]), error: undefined })
+  expect(text(filtered)).toContain('没有匹配的记录')
+  expect(withClass(filtered, styles.row).length).toBe(0)
+  // The search field is part of the panel and therefore of its Tab traversal.
+  expect(elements(filtered).some(element => element.type === 'input')).toBe(true)
 })
 
 test('the English dictionary renders the same four states', () => {

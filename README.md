@@ -1,12 +1,12 @@
 # Project Ops
 
-Version 0.4.1 uses the Host’s shared text baseline when available; older Hosts keep their original layout. Menu, panel and Host behavior stay the same as 0.4.0.
+0.4.2 修复候选：修复进度更新误报标题无效，并在 Project Ops 汇总当前项目的 PLAN / READY 交付记录。类型检查、53 项相关测试、构建及社区 RC.2 隔离装载已通过；浏览器访问阻断，实际页面验收尚未完成。当前正式下载仍为 0.4.1。本分支不表示已发布或已安装。详见 [本次修改与验收范围](docs/DELIVERY-OVERVIEW.md)。
 
 [桌面端](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [安装说明](INSTALL.md) · [开发任务文档](docs/TASK_DOCUMENTS.md)
 
 Project Ops 为 DeepSeek Harness 提供项目任务发现、原生执行与验证回执，以及开发方案和交付记录。包名统一为 `@missher/dsh-project-ops`，沿用本仓库，没有新增兼容插件。
 
-当前源码版本 **0.4.1**，面向 DeepSeek Harness 0.2 系列，不要求某个精确的 Host 版本。版本判据是能力而不是版本号：插件在激活时探测自己真正调用的方法，缺少可选能力（原生 Jobs 后台、客户端文件预览等）时只关闭对应功能并说明原因，不把整块入口静默撤下。
+本分支源码版本 **0.4.2**，面向 DeepSeek Harness 0.2 系列，不要求某个精确的 Host 版本。版本判据是能力而不是版本号：插件在激活时探测自己真正调用的方法，缺少可选能力（原生 Jobs 后台、客户端文件预览等）时只关闭对应功能并说明原因，不把整块入口静默撤下。
 
 2026-10-17 在三个真实宿主上做过隔离验收（各自独立 HOME/DSH_HOME、合成工作区、无外部模型调用）：社区 rc.2（DSH 0.2.0-rc.2 / Cordis 4.0.4）、社区 alpha.2（0.2.1-alpha.2 / Cordis 4.0.5-alpha.1）、官方 npm alpha.5（0.2.1-alpha.5 / Cordis 4.0.5）。前两者是社区桌面封装，不是官方原始包。**已核验的只是这三个锚点，不是版本范围允许的全部版本**；最低接口、缺能力降级与未测范围见 [兼容性矩阵](docs/COMPATIBILITY.md)。
 
