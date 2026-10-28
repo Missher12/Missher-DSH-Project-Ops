@@ -54,3 +54,9 @@
 ```
 
 这段项目文件是给当前仓库的 Agent 指令，不是插件安装步骤，也不应复制插件的内部命令实现。
+
+## 文件产物与 present
+
+生成用户最终会打开的文件（EXE、Excel、PDF、图片、压缩包、未知后缀）后，如果当前 Host 暴露原生 `present`，用 `present(files:[{path, description?}])` 登记真实常规文件：它会写入持久的 `deliverables/presented` 记录并归属当前会话。不要把文件路径手工抄进 READY，也不要让模型正文充当路径来源。
+
+Project Ops 的“文件产物”视图按真实目录列举项目根与 `dist`/`build`/`out`/`exports`/`release`，不按扩展名白名单发现，因此 EXE、XLSX、ZIP 与未知后缀都能出现。Bash 输出和历史文件在没有持久 presented 记录的旧 Host 上标为“项目文件，生成会话未确认”，不冒充该会话生成；目录读取失败或宿主列表截断会明确显示，而不是显示成“没有文件”。Excel/XLSX/CSV/PDF/图片走原生预览，EXE 等可执行文件只显示元数据与路径，默认不运行。

@@ -138,3 +138,107 @@ test('finish retries bind the previous revision, and fresh evidence can replace 
   expect(second.revision).toBe(3); expect(second.verification).toBe('新的原生回执验证')
   await expect(f.store.finish(a.taskId, 1, report, '过期请求', f.exec)).rejects.toThrow('Stale task revision')
 })
+
+test('a partial update changes only the supplied fields and keeps the rest of the plan', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  // The reported failure: a progress-only update must not require the title.
+  const updated = await f.store.update(a.taskId, 1, { progress: '实现中，稍后补验收' }, 'active', f.exec)
+  expect(updated.revision).toBe(2)
+  const saved = (await f.store.get(a.taskId, f.exec)).record.plan
+  expect(saved.title).toBe(plan.title)
+  expect(saved.requirements).toBe(plan.requirements)
+  expect(saved.design).toBe(plan.design)
+  expect(saved.steps).toEqual(plan.steps)
+  expect(saved.acceptance).toEqual(plan.acceptance)
+  expect(saved.progress).toBe('实现中，稍后补验收')
+  // A complete six-field payload still behaves exactly like before.
+  const complete = await f.store.update(a.taskId, 2, { ...plan, progress: '完成' }, 'active', f.exec)
+  expect(complete.revision).toBe(3)
+  expect((await f.store.get(a.taskId, f.exec)).record.plan).toEqual({ ...plan, progress: '完成' })
+})
+
+test('an upward revision change is required before merge: stale patches never look like a no-op success', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  await f.store.update(a.taskId, 1, { progress: '第一次进展' }, 'active', f.exec)
+  // Old revision with an identical patch: rejected, not silently accepted.
+  await expect(f.store.update(a.taskId, 1, { progress: '第一次进展' }, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Old revision with an empty patch: also rejected.
+  await expect(f.store.update(a.taskId, 1, {}, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Old revision with the complete, unchanged plan: rejected.
+  await expect(f.store.update(a.taskId, 1, { ...plan, progress: '第一次进展' }, 'active', f.exec)).rejects.toThrow('Stale task revision')
+  // Current revision with an empty patch is a legitimate no-op, not a fabricated write.
+  const noop = await f.store.update(a.taskId, 2, {}, 'active', f.exec)
+  expect(noop.revision).toBe(2)
+  // Current revision with the same content is likewise the same record.
+  expect((await f.store.update(a.taskId, 2, { progress: '第一次进展' }, 'active', f.exec)).revision).toBe(2)
+})
+
+test('partial update rejects null, empty, wrong types and unknown fields by name, and never writes', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  const before = readFileSync(join(f.cwd, 'docs/tasks', a.taskId, 'PLAN.md'), 'utf8')
+  await expect(f.store.update(a.taskId, 1, { title: null }, 'active', f.exec)).rejects.toThrow(/Invalid title: expected a string, received null/u)
+  await expect(f.store.update(a.taskId, 1, { title: '   ' }, 'active', f.exec)).rejects.toThrow(/Invalid title: the string is empty/u)
+  await expect(f.store.update(a.taskId, 1, { title: 42 }, 'active', f.exec)).rejects.toThrow(/Invalid title: expected a string, received a number/u)
+  await expect(f.store.update(a.taskId, 1, { steps: 'one' }, 'active', f.exec)).rejects.toThrow(/Invalid steps: expected an array/u)
+  await expect(f.store.update(a.taskId, 1, { titel: 'typo' }, 'active', f.exec)).rejects.toThrow(/Unknown PLAN field\(s\): titel/u)
+  // Every rejection above left the file, the revision and the record untouched.
+  expect(readFileSync(join(f.cwd, 'docs/tasks', a.taskId, 'PLAN.md'), 'utf8')).toBe(before)
+  expect((await f.store.get(a.taskId, f.exec)).record.revision).toBe(1)
+})
+
+test('begin names the missing field instead of a bare range message', async () => {
+  const f = await fixture()
+  await expect(f.store.begin('feature', { ...plan, title: undefined }, f.exec))
+    .rejects.toThrow(/Invalid title: expected a string, received nothing \(field absent\)/u)
+  expect(await f.store.list(f.exec)).toEqual([])
+})
+
+test('production[] records structured facts and stays optional for old reports', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  // An old report without production still parses: absence means unknown.
+  const legacy = { ...report }
+  const finished = await f.store.finish(a.taskId, 1, legacy, '未验证', f.exec)
+  expect(finished.readyValid).toBe(true)
+  const stored = (await f.store.get(a.taskId, f.exec)).record.delivery!.report
+  expect(stored.production).toBeUndefined()
+
+  const withProduction = {
+    ...report,
+    production: [
+      { kind: 'artifact', name: 'bundle', target: 'dist/app.tgz', version: '0.4.2', summary: '候选包', source: 'agent', recordedAt: '2026-10-23T01:00:00Z', outcome: 'succeeded' },
+      { kind: 'release', name: 'github release', target: 'https://example.invalid/releases/v0.4.2', source: 'release owner', recordedAt: '2026-10-23T02:00:00Z' },
+      { kind: 'install', name: 'desktop profile', version: '0.4.2', environment: 'desktop', platform: 'linux-x64', source: 'desktop owner', recordedAt: '2026-10-23T03:00:00Z', outcome: 'unverified' },
+    ],
+  }
+  const f2 = await fixture(); const b = await f2.store.begin('feature', plan, f2.exec)
+  await f2.store.finish(b.taskId, 1, withProduction, '未验证', f2.exec)
+  const parsed = (await f2.store.get(b.taskId, f2.exec)).record.delivery!.report
+  expect(parsed.production).toHaveLength(3)
+  expect(parsed.production![2]).toMatchObject({ kind: 'install', platform: 'linux-x64', outcome: 'unverified' })
+  // The READY body renders the facts for a human, labelled as a session report.
+  const ready = (await f2.store.get(b.taskId, f2.exec)).ready.content!
+  expect(ready).toContain('生产与发布记录（会话报告）')
+  expect(ready).toContain('https://example.invalid/releases/v0.4.2')
+})
+
+test('production rejects malformed targets, unknown fields and oversized lists by field name', async () => {
+  const f = await fixture(); const a = await f.store.begin('feature', plan, f.exec)
+  const entry = { kind: 'artifact', name: 'bundle', source: 'agent', recordedAt: '2026-10-23T01:00:00Z' }
+  const attempt = async (production: unknown) => {
+    const target = await f.store.begin('feature', plan, { ...f.exec, callId: `call-${Math.random()}` } as ToolRunContext).catch(() => undefined)
+    // Use a second task so a rejected finish never touches the first record.
+    const task = target ?? a
+    return f.store.finish(task.taskId, 1, { ...report, production }, '未验证', f.exec).then(() => 'accepted', (error: Error) => error.message)
+  }
+  // Absolute paths, parent traversal and non-http schemes never become targets.
+  expect(await attempt([{ ...entry, target: '/etc/passwd' }])).toMatch(/Invalid production\[0\]\.target/u)
+  expect(await attempt([{ ...entry, target: 'build/../../secret' }])).toMatch(/Invalid production\[0\]\.target/u)
+  expect(await attempt([{ ...entry, target: 'javascript:alert(1)' }])).toMatch(/Invalid production\[0\]\.target/u)
+  expect(await attempt([{ ...entry, target: 'https://user:pass@example.invalid/a' }])).toMatch(/Invalid production\[0\]\.target/u)
+  // Unknown fields, wrong kinds and wrong outcomes are rejected, not dropped.
+  expect(await attempt([{ ...entry, extra: true }])).toMatch(/Unknown production\[0\] field\(s\): extra/u)
+  expect(await attempt([{ ...entry, kind: 'publish' }])).toMatch(/Invalid production\[0\]\.kind/u)
+  expect(await attempt([{ ...entry, outcome: 'done' }])).toMatch(/Invalid production\[0\]\.outcome/u)
+  expect(await attempt('not-an-array')).toMatch(/Invalid production: expected an array/u)
+  expect(await attempt(Array.from({ length: 41 }, () => entry))).toMatch(/exceeds the 40-entry limit/u)
+})

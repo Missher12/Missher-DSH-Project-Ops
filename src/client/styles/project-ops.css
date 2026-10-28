@@ -52,6 +52,12 @@
   flex: none;
 }
 
+.po-trigger-narrow {
+  gap: 0;
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
 .po-trigger-label {
   /* Hosts without the shared header baseline keep the trigger alignment. */
   align-self: var(--dsh-conversation-header-label-align, auto);
@@ -131,6 +137,316 @@
   line-height: 16px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* View switch: lightweight text buttons in the native menu material. */
+.po-scope {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 0 6px 4px;
+}
+
+.po-scope-button {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.po-scope-button:hover:not(:disabled),
+.po-scope-button:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.po-scope-button-active {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-scope-button:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/* One registered project section; separators stay hairline and quiet. */
+.po-project {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 6px;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.po-project:first-of-type {
+  border-top: 0;
+}
+
+.po-project-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px 0;
+}
+
+.po-project-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsw-font-xxs-strong-12-font-size);
+  font-weight: var(--dsw-font-xxs-strong-12-font-weight);
+  line-height: var(--dsw-font-xxs-strong-12-line-height);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-project-status {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+}
+
+.po-project-meta {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-project-note {
+  padding: 1px 8px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-project-more {
+  display: flex;
+  justify-content: flex-start;
+  padding: 2px 6px;
+}
+
+/* File artifacts: real directory listings, labelled by what is actually known. */
+.po-files {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.po-files-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 6px;
+}
+
+.po-files-root {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.po-files-root:hover,
+.po-files-root:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.po-files-root-active {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-files-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  min-width: 0;
+}
+
+.po-files-crumb select {
+  min-width: 0;
+  max-width: 160px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+}
+
+.po-files-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.po-files-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--dsw-radius-xs);
+}
+
+.po-files-entry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.po-files-kind {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-files-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: 16px;
+}
+
+.po-files-size {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-files-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.po-files-note {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-files-path {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Structured production facts: a session report, never a verified live state. */
+.po-production {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.po-production-label {
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-production-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-production-kind {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-production-outcome {
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-production-target {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-production-note {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+/* Local search over the loaded page; the field joins the panel's Tab order. */
+.po-toolbar {
+  display: flex;
+  flex: none;
+  padding: 1px 6px 6px;
+}
+
+.po-search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxs-12-font-size);
+  line-height: 18px;
+}
+
+.po-search::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.po-search:focus-visible {
+  border-color: var(--dsw-alias-border-l3);
 }
 
 .po-icon-button {
@@ -268,6 +584,96 @@
   -webkit-line-clamp: 2;
 }
 
+/* Relative location and provenance; a technical path stays secondary. */
+.po-row-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-row-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.po-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+/* Bounded artifact excerpt from a managed delivery report; never a link. */
+.po-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-artifacts-label {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-artifact {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.po-artifact-note {
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+/* Verification is a session report; the label makes that explicit. */
+.po-verify {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.po-verify-label {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+}
+
+.po-verify-text {
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A read problem keeps the row visible and explains itself. */
+.po-row-problem {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
 /* Directory id fallback when no readable title identified the task. */
 .po-row-id {
   color: var(--dsw-alias-label-secondary);
@@ -338,6 +744,41 @@
 }
 
 .po-action:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+/* Continuation of the bounded page cursor. */
+.po-more-row {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  padding: 4px 6px 2px;
+}
+
+.po-more {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.po-more:hover:not(:disabled),
+.po-more:focus-visible:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.po-more:disabled {
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
 }

@@ -8,7 +8,21 @@
 
 每个任务写入工作区 `docs/tasks/<UTC日期>-<slug>-<身份摘要>/PLAN.md`。身份摘要来自真实 Host Session ID 与首次原生工具调用 ID。不同会话不能通过本插件修改其他会话的记录；同一会话可有多个独立任务。重启后读取原任务，再以返回的 `taskId` 和 `revision` 继续更新。新调用重试应传已有 taskId，不能再次 begin；同一原生创建调用重放是幂等的。
 
-PLAN 数据字段为 `title`、`requirements`、`design`、`steps[]`、`acceptance[]`、`progress`。每次实质需求或进度变更通过 update 写入完整新值，并附 `expectedRevision`。遇到失败或取消时明确写 `status=failed|cancelled`，继续工作时显式恢复 active。工具退出或回复完成不会改变任务状态；插件不创建调度器、不订阅 turn-end 自动结案。
+PLAN 数据字段为 `title`、`requirements`、`design`、`steps[]`、`acceptance[]`、`progress`。`begin` 必须一次提供全部六个字段，最小合法示例：
+
+```json
+{"action":"begin","slug":"fix-panel","data":{"title":"修复面板","requirements":"…","design":"…","steps":["实现"],"acceptance":["可读"],"progress":"开始"}}
+```
+
+`update` 支持按已读取修订做局部更新：只需传 `taskId`、`expectedRevision` 与真正变化的字段，缺省字段保留原值。例如只推进进度：
+
+```json
+{"action":"update","taskId":"…","expectedRevision":3,"data":{"progress":"实现完成，等待验收"}}
+```
+
+只有字段缺省（`undefined`）才表示"保留原值"；显式 `null`、空字符串、错误类型、超过 16000 字符或未知字段名都会返回带字段名与补救提示的错误（例如 `Invalid title: expected a string, received null.`、`Unknown PLAN field(s): titel`），不会伪造、截断或静默接受。修订号在合并与幂等判断之前校验：用旧 `expectedRevision` 提交相同内容或空对象同样会被拒绝，不会看起来像一次成功更新。完整六字段的旧调用保持兼容。
+
+遇到失败或取消时明确写 `status=failed|cancelled`，继续工作时显式恢复 active。工具退出或回复完成不会改变任务状态；插件不创建调度器、不订阅 turn-end 自动结案。
 
 交付检查后调用 finish，提供 `implementation`、`checks[{criterion,status,evidence}]`、`artifacts[]`、`git`、`release`、`installation`、`limitations[]`、`rollback`。checks 必须与 PLAN 每条验收标准对应，状态为 `reported-pass`、`failed` 或 `unverified`。这些正文是当前会话报告，不能当作插件独立证明。可附原有 verification_gate 的完整参数；插件会用当前激活期的真实回执与源码快照复核，缺失证据明确未验证。不会为写文档重复运行测试。
 
@@ -30,6 +44,16 @@ READY 先落盘，PLAN 最后提交关联摘要。若在这两步之间中断，
 
 ## 界面状态与交付重试
 
-入口只读检查 PLAN 正文和 READY 摘要关联，区分当前关联、历史、待核对、未生成；“当前关联”不代表验收通过。人工修改或读取失败显示待核对，其余任务仍可查看。最多显示100项、4个并发读取工作单元，刷新后取新状态。
+入口只读检查 PLAN 正文和 READY 摘要关联，区分当前关联、历史、待核对、未生成；“当前关联”不代表验收通过。人工修改、元数据头被移动或读取失败显示待核对，其余记录仍可查看。
+
+## 交付总览
+
+标题栏面板列出当前工作区的全部已记录交付：工作区根的 `PLAN.md`/`READY.md`，以及 `docs/tasks` 下**任何**含 `PLAN.md` 或 `READY.md` 的直接目录——日期-摘要新目录、旧命名目录、人工书写的普通记录都显示，不再按 16 位摘要过滤，孤立 READY 也可见。每行给出标题、相对位置、来源标签（工作区根 / 旧版目录 / 普通记录）、四种交付状态、方案与交付入口，以及托管交付记录里的产物摘要与验收句。
+
+- 没有托管元数据的文件标为“普通记录/待核对”，不自动补写状态，也不因为缺 PLAN 而隐藏孤立 READY。
+- 托管 READY 的产物与验收句只作为**会话报告**展示：产物存在不代表已验收、已发布或已安装；摘要被截断时提示“完整内容见 READY”；待核对或缺失状态下不显示旧验收句。
+- 列表按宿主真实目录接口分批读取：每批固定数量目录，返回下一批偏移，面板“显示更多”继续；同一加载代复用同一目录快照，避免目录增删导致重复或漏项，刷新才重新取快照。宿主目录列表自身达到上限时明确提示，不再有静默的 100 项截断。
+- 目录读取失败显示为告警而不是“没有交付”；单个目录或文档损坏只影响该行并保留原因。检索框在本批已加载记录中按标题、目录名与相对路径筛选。
+- 读取可取消：刷新、关闭面板或切换会话会中止在途读取并丢弃旧结果，不会串到其他会话。
 
 finish 只将前一修订的相同报告认作刚完成提交的重试；基于当前修订提交新验证会生成新记录，更旧修订拒绝。中断后的 READY-first 提交仍保留当时验证事实。

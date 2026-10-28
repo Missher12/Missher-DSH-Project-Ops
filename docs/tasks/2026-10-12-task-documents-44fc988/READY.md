@@ -31,7 +31,7 @@
 
 ## 唯一冻结候选与证据
 
-目录：`<local-delivery>/project-ops/verified/`
+目录：`/home/missher/Projects/DSH-Recovery-20261012/project-ops-delivery/verified/`
 
 - 包：`missher-dsh-project-ops-0.4.0-alpha.1.tgz`，47132 bytes。
 - SHA-256：`a22557c067c3e88c73593c0e7bcb32512600c19d8a201ee5a670d8b0c0f88dd4`。

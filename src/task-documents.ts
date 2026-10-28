@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { parseProduction, productionLine, type ProductionEntry } from './production.ts'
 
 export const DOCUMENT_LIMIT = 128 * 1024
 export const TASK_DIRECTORY = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]{1,48}-[a-f0-9]{16}$/u
@@ -12,6 +13,8 @@ export interface DevelopmentPlan {
   progress: string
 }
 export interface DeliveryReport {
+  /** Optional structured production facts; absent means unknown, not "none succeeded". */
+  production?: ProductionEntry[]
   implementation: string
   checks: { criterion: string; status: 'reported-pass' | 'failed' | 'unverified'; evidence: string }[]
   artifacts: string[]
@@ -34,22 +37,75 @@ export interface TaskRecord {
   delivery?: { report: DeliveryReport; verification: string; readyHash: string }
 }
 export function digest(text: string): string { return createHash('sha256').update(text).digest('hex') }
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a document object')
+
+/** The complete PLAN field set. `begin` requires all of them; `update` accepts any subset. */
+export const PLAN_FIELDS = ['title', 'requirements', 'design', 'steps', 'acceptance', 'progress'] as const
+
+/** Upper bounds the validators enforce; values are rejected, never truncated. */
+const TEXT_LIMIT = 16000
+const ITEM_LIMIT = 80
+
+/** What a caller actually passed, named so an error can say "received null" instead of just "invalid". */
+function received(value: unknown): string {
+  if (value === undefined) return 'nothing (field absent)'
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'an array'
+  return `a ${typeof value}`
+}
+
+function object(value: unknown, label = 'data'): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Invalid ${label}: expected an object, received ${received(value)}.`)
   return value as Record<string, unknown>
 }
 function text(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 16000 || value.includes('\u0000')) throw new Error(`Invalid ${label}: provide 1–16000 characters`)
+  if (typeof value !== 'string') throw new Error(`Invalid ${label}: expected a string, received ${received(value)}. Provide 1–${TEXT_LIMIT} characters.`)
+  if (!value.trim()) throw new Error(`Invalid ${label}: the string is empty. Provide 1–${TEXT_LIMIT} characters.`)
+  if (value.length > TEXT_LIMIT) throw new Error(`Invalid ${label}: ${value.length} characters exceeds the ${TEXT_LIMIT}-character limit. Shorten the value; it is never truncated for you.`)
+  if (value.includes('\u0000')) throw new Error(`Invalid ${label}: the string contains a NUL character. Remove it and retry.`)
   return value
 }
 function texts(value: unknown, label: string, empty = false): string[] {
-  if (!Array.isArray(value) || value.length > 80 || (!empty && value.length === 0)) throw new Error(`Invalid ${label}: provide ${empty ? 0 : 1}–80 items`)
-  return value.map(item => text(item, label))
+  if (!Array.isArray(value)) throw new Error(`Invalid ${label}: expected an array of strings, received ${received(value)}. Provide ${empty ? 0 : 1}–${ITEM_LIMIT} items.`)
+  if (value.length > ITEM_LIMIT) throw new Error(`Invalid ${label}: ${value.length} items exceeds the ${ITEM_LIMIT}-item limit. Remove items; they are never truncated for you.`)
+  if (!empty && value.length === 0) throw new Error(`Invalid ${label}: at least 1 item is required.`)
+  return value.map((item, index) => text(item, `${label}[${index}]`))
 }
 export function parsePlan(value: unknown): DevelopmentPlan {
   const row = object(value)
   const result = { title: text(row.title, 'title'), requirements: text(row.requirements, 'requirements'), design: text(row.design, 'design'), steps: texts(row.steps, 'steps'), acceptance: texts(row.acceptance, 'acceptance'), progress: text(row.progress, 'progress') }
-  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Acceptance criteria must be unique')
+  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Invalid acceptance: criteria must be unique.')
+  return result
+}
+
+/**
+ * Merge a partial PLAN update over the record read at `expectedRevision`.
+ *
+ * Only an **absent** field (`undefined`) keeps its current value, so an update
+ * carrying just `progress` no longer has to repeat the title. `null`, an empty
+ * value, a wrong type and an unknown field are rejected with the field name: a
+ * typo can never look like a successful update, and nothing is fabricated or
+ * truncated. A full six-field object behaves exactly like {@link parsePlan}.
+ * @param current - the plan stored in the record read before this update.
+ * @param value - the partial or complete PLAN object supplied by the caller.
+ * @returns the merged plan, validated as a whole.
+ */
+export function mergePlan(current: DevelopmentPlan, value: unknown): DevelopmentPlan {
+  const row = object(value)
+  const unknown = Object.keys(row).filter(key => !(PLAN_FIELDS as readonly string[]).includes(key))
+  if (unknown.length > 0) {
+    throw new Error(`Unknown PLAN field(s): ${unknown.join(', ')}. Allowed fields: ${PLAN_FIELDS.join(', ')}. Omit a field to keep its current value.`)
+  }
+  const field = <K extends keyof DevelopmentPlan>(key: K, parse: (input: unknown, label: string) => DevelopmentPlan[K]): DevelopmentPlan[K] =>
+    row[key] === undefined ? current[key] : parse(row[key], key)
+  const result: DevelopmentPlan = {
+    title: field('title', text),
+    requirements: field('requirements', text),
+    design: field('design', text),
+    steps: field('steps', (input, label) => texts(input, label)),
+    acceptance: field('acceptance', (input, label) => texts(input, label)),
+    progress: field('progress', text),
+  }
+  if (new Set(result.acceptance).size !== result.acceptance.length) throw new Error('Invalid acceptance: criteria must be unique.')
   return result
 }
 export function parseReport(value: unknown, plan: DevelopmentPlan): DeliveryReport {
@@ -63,7 +119,11 @@ export function parseReport(value: unknown, plan: DevelopmentPlan): DeliveryRepo
     return { criterion, status: status as DeliveryReport['checks'][number]['status'], evidence: text(check.evidence, 'evidence') }
   })
   if (new Set(checks.map(c => c.criterion)).size !== checks.length || checks.some(c => !plan.acceptance.includes(c.criterion))) throw new Error('Report criteria differ from PLAN')
-  return { implementation: text(row.implementation, 'implementation'), checks, artifacts: texts(row.artifacts, 'artifacts', true), git: text(row.git, 'git'), release: text(row.release, 'release'), installation: text(row.installation, 'installation'), limitations: texts(row.limitations, 'limitations', true), rollback: text(row.rollback, 'rollback') }
+  const report: DeliveryReport = { implementation: text(row.implementation, 'implementation'), checks, artifacts: texts(row.artifacts, 'artifacts', true), git: text(row.git, 'git'), release: text(row.release, 'release'), installation: text(row.installation, 'installation'), limitations: texts(row.limitations, 'limitations', true), rollback: text(row.rollback, 'rollback') }
+  // Only an absent field is unknown; a present array is validated entry by entry.
+  const production = parseProduction(row.production)
+  if (production !== undefined) report.production = production
+  return report
 }
 const bullets = (values: string[]): string => values.length ? values.map(v => `- ${v}`).join('\n') : '- 无'
 export function planBody(record: TaskRecord): string {
@@ -100,7 +160,11 @@ export function readyBody(record: TaskRecord, report: DeliveryReport, verificati
 
 /** READY carries enough checked metadata to recover a READY-first interrupted commit. */
 export function encodeReady(record: TaskRecord, report: DeliveryReport, verification: string): string {
-  const body = readyBody(record, report, verification)
+  const base = readyBody(record, report, verification)
+  // Production facts are a session report; they are rendered so a human can read
+  // them, and their absence stays "unknown" instead of reading as success.
+  const body = report.production === undefined || report.production.length === 0 ? base
+    : `${base}\n## 生产与发布记录（会话报告）\n\n${report.production.map(entry => productionLine(entry)).join('\n')}\n\n构建、发布与安装是独立阶段；记录构建成功不代表已发布或已安装，缺少原生证明的状态保持未核验。\n`
   const metadata = { planHash: digest(encodePlan(record)), reportHash: digest(JSON.stringify(report)), verification, bodyHash: digest(body) }
   return `[project-ops-ready-v1]: <data:application/json;base64,${Buffer.from(JSON.stringify(metadata)).toString('base64')}>\n\n${body}`
 }
