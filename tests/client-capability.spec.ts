@@ -17,6 +17,9 @@ interface Registered {
     surface: () => { list: boolean; preview: boolean }
     list: (signal: AbortSignal) => Promise<unknown>
     open: (task: string, file: 'PLAN.md' | 'READY.md') => void
+    files: (signal: AbortSignal) => Promise<unknown>
+    openFile: (path: string, signal: AbortSignal) => Promise<void>
+    revealFile: (path: string, signal: AbortSignal) => Promise<void>
   }
 }
 
@@ -149,5 +152,57 @@ test('the required services stay the only hard activation requirements', () => {
   // The archive check asserts this too; here it is pinned in source so a later
   // edit cannot quietly turn an optional service into a hard activation lock.
   expect(ProjectOps.inject).toEqual(['slots', 'locale'])
-  expect(ProjectOps.OPTIONAL_SERVICES).toEqual(['remote.workspaceFiles', 'sidebarRight'])
+  expect(ProjectOps.OPTIONAL_SERVICES).toEqual(['remote.workspaceFiles', 'sidebarRight', 'remote.session', 'sessions'])
+})
+
+test('reads the viewed session file projection and checks the file before native preview', async () => {
+  const reads: string[] = []
+  const opened: string[] = []
+  const fixture = await clientFixture({
+    'remote.session': { projections: async ({ sessionId }: { sessionId: string }) => {
+      reads.push(sessionId)
+      return { ok: true, value: { kind: 'sequenced', asOfSeq: 10, values: {
+        missherProjectOpsFiles: { files: [{ path: '/work/report.docx', updatedAt: 1 }], truncated: false },
+      } } }
+    } },
+    'remote.workspaceFiles': { ...filesFace(), stat: async (sessionId: string, path: string) => {
+      reads.push(`${sessionId}:${path}`)
+      return path.endsWith('missing.xlsx') ? { ok: false, error: { code: 'workspace-file/not-found', message: 'File not found' } } : { ok: true, value: { kind: 'file' } }
+    } },
+    sidebarRight: { openResource: (address: string) => { opened.push(address) } },
+  })
+  const face = fixture.entry()!.inject('viewed-session')
+  const signal = new AbortController().signal
+  await expect(face.files(signal)).resolves.toMatchObject({ files: [{ path: '/work/report.docx' }], truncated: false })
+  await face.openFile('/work/report.docx', signal)
+  await expect(face.openFile('/work/missing.xlsx', signal)).rejects.toThrow('File not found')
+  expect(reads).toEqual(['viewed-session', 'viewed-session:/work/report.docx', 'viewed-session:/work/missing.xlsx'])
+  expect(opened).toHaveLength(1)
+  expect(opened[0]).toContain('report.docx')
+})
+
+test('reveal asks the Host to show the file in Finder after checking it still exists', async () => {
+  const calls: unknown[] = []
+  const fixture = await clientFixture({
+    'remote.session': { openWorkspacePath: async (request: { path: string, action?: string }) => { calls.push(request); return { ok: true } } },
+    'remote.workspaceFiles': {
+      ...filesFace(),
+      stat: async (_sessionId: string, path: string) => path.endsWith('gone.docx')
+        ? { ok: false, error: { code: 'workspace-file/not-found', message: 'no entry' } }
+        : { ok: true, value: { kind: 'file' } },
+    },
+  })
+  const face = fixture.entry()!.inject('viewed-session')
+  const signal = new AbortController().signal
+  await expect(face.revealFile('/work/方案-分类测试.docx', signal)).resolves.toBeUndefined()
+  await expect(face.revealFile('/work/gone.docx', signal)).rejects.toMatchObject({ outcome: 'missing' })
+  expect(calls).toEqual([{ path: '/work/方案-分类测试.docx', action: 'reveal' }])
+})
+
+test('a Host without the reveal Remote reports unsupported and keeps the panel usable', async () => {
+  const fixture = await clientFixture({ 'remote.workspaceFiles': filesFace() })
+  const face = fixture.entry()!.inject('session-1')
+  await expect(face.revealFile('/work/report.docx', new AbortController().signal)).rejects.toMatchObject({ outcome: 'unsupported' })
+  // Only the reveal action is affected: the entry itself still renders.
+  expect(face.surface()).toEqual({ list: true, preview: false })
 })

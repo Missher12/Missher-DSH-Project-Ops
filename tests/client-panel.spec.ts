@@ -161,7 +161,7 @@ test('the trigger is a plain labelled button, not a browser default face', () =>
   expect(props.className).toBe(styles.trigger)
   expect(props['aria-expanded']).toBe(false)
   expect(props['aria-haspopup']).toBe('dialog')
-  expect(props['aria-label']).toBe('项目任务与交付记录：3 项')
+  expect(props['aria-label']).toBe('项目方案与文件：3 项')
   expect(text(tree)).toContain('Project Ops')
 })
 
@@ -169,10 +169,10 @@ test('the panel reports loading, empty, error and truncated states distinctly', 
   const base = { t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false, availability: AVAILABLE, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
   const loading = ProjectOpsPanel({ ...base, result: undefined, error: undefined })
   expect(String((withClass(loading, styles.skeleton)[0]!.props as { role?: string }).role)).toBe('status')
-  expect(elements(loading).some(element => (element.props as { 'aria-label'?: string })['aria-label'] === '正在读取项目任务…')).toBe(true)
+  expect(elements(loading).some(element => (element.props as { 'aria-label'?: string })['aria-label'] === '加载中…')).toBe(true)
 
   const empty = ProjectOpsPanel({ ...base, result: { tasks: [], truncated: false }, error: undefined })
-  expect(text(empty)).toContain('尚无开发任务')
+  expect(text(empty)).toContain('暂无开发任务')
   expect(withClass(empty, styles.row).length).toBe(0)
 
   const failure = ProjectOpsPanel({ ...base, result: undefined, error: 'workspace-file/unavailable' })
@@ -203,7 +203,7 @@ test('the panel exposes its title, refresh and close actions and a read-only hin
   expect(labels).toContain('刷新')
   expect(labels).toContain('关闭')
   expect(withClass(tree, styles.footer).length).toBe(1)
-  expect(text(tree)).toContain('文件存在不代表已发布或安装')
+  expect(text(tree)).toContain('会话文件 · 项目方案')
   expect(text(tree)).toContain('1 项')
 })
 
@@ -222,11 +222,11 @@ test('a Host without the workspace-files remote explains itself instead of showi
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })
   const rendered = text(tree)
-  expect(rendered).toContain('未提供工作区文件读取能力')
+  expect(rendered).toContain('无工作区文件读取能力')
   const notice = withClass(tree, styles.notice)[0]!
   expect(String((notice.props as { title?: string }).title)).toContain('remote.workspaceFiles')
   // A missing read capability must never be rendered as "no tasks yet".
-  expect(rendered).not.toContain('尚无开发任务')
+  expect(rendered).not.toContain('暂无开发任务')
   expect(withClass(tree, styles.skeleton).length).toBe(0)
 })
 
@@ -249,4 +249,118 @@ test('the English dictionary renders the same four states', () => {
     expect(tEn(view.hint).length).toBeGreaterThan(0)
   }
   expect(tEn(taskView(task({ delivery: 'current' })).status)).toBe('Delivery linked to current plan')
+})
+
+test('file categories are independent of plans and keep a Word proposal in Word', () => {
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
+    files: { files: [
+      { path: '/work/方案.docx', updatedAt: 1 },
+      { path: '/work/预算.XLSX', updatedAt: 2 },
+      { path: '/work/汇报.pptx', updatedAt: 3 },
+    ], truncated: false },
+    onOpenFile: () => {},
+  }
+  const word = ProjectOpsPanel({ ...base, category: 'word' })
+  expect(text(word)).toContain('方案.docx')
+  expect(text(word)).not.toContain('预算.XLSX')
+  expect(text(word)).not.toContain('DSH 原生风格界面修订')
+  const plans = ProjectOpsPanel({ ...base, category: 'plans' })
+  expect(text(plans)).toContain('DSH 原生风格界面修订')
+  expect(text(plans)).toContain('交付记录')
+  expect(text(plans)).not.toContain('方案.docx')
+})
+
+test('actual files remain usable when the project has no managed plans', () => {
+  const opened: string[] = []
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/out/report.pdf', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: path => { opened.push(path) },
+  })
+  const file = buttons(tree).find(button => button.props.title === '/work/out/report.pdf')
+  expect(file).toBeDefined()
+  file!.props.onClick()
+  expect(opened).toEqual(['/work/out/report.pdf'])
+})
+
+test('a delivered file keeps its native preview and adds a separate open-location action', () => {
+  const opened: string[] = []
+  const revealed: string[] = []
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
+    onOpenFile: path => { opened.push(path) },
+    onRevealFile: path => { revealed.push(path) },
+  })
+  const all = buttons(tree) as ReactElement<{ title?: string, 'aria-label'?: string, onClick: () => void }>[]
+  const preview = all.find(button => button.props.title === '/work/方案-分类测试.docx')
+  const reveal = all.find(button => button.props.title === '打开位置')
+  expect(preview).toBeDefined()
+  expect(reveal).toBeDefined()
+  // The reveal action names the file for assistive technology.
+  expect(reveal!.props['aria-label']).toContain('方案-分类测试.docx')
+  preview!.props.onClick()
+  reveal!.props.onClick()
+  expect(opened).toEqual(['/work/方案-分类测试.docx'])
+  expect(revealed).toEqual(['/work/方案-分类测试.docx'])
+})
+
+test('a reveal refusal explains itself inside the panel instead of hiding the file', () => {
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
+  }
+  const missing = ProjectOpsPanel({ ...base, revealError: { path: '/work/方案-分类测试.docx', outcome: 'missing', message: 'no entry' } })
+  expect(text(missing)).toContain('文件已移动或删除')
+  expect(text(missing)).toContain('方案-分类测试.docx')
+  expect(withClass(missing, styles.menu).length).toBe(1)
+  const unsupported = ProjectOpsPanel({ ...base, revealError: { path: '/work/方案-分类测试.docx', outcome: 'unsupported', message: 'no remote' } })
+  expect(text(unsupported)).toContain('不支持显示文件位置')
+  // A reveal failure on another row does not leak into this row.
+  const other = ProjectOpsPanel({ ...base, revealError: { path: '/work/other.docx', outcome: 'missing', message: 'no entry' } })
+  expect(text(other)).not.toContain('文件已移动或删除')
+})
+
+test('a file row keeps only its name and action, moving path and note into the tooltip', () => {
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/out/report.docx', description: '初稿', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
+  })
+  const rendered = text(tree)
+  // The row body stays short: name plus the always-visible open-location action.
+  expect(rendered).toContain('report.docx')
+  expect(rendered).toContain('打开位置')
+  expect(rendered).not.toContain('/work/out')
+  expect(rendered).not.toContain('初稿')
+  const fileButton = buttons(tree)
+    .find(button => String((button.props as { title?: string }).title ?? '').startsWith('/work/out/report.docx'))!
+  expect(String((fileButton.props as { title: string }).title).split('\n')).toEqual(['/work/out/report.docx', '初稿'])
+})
+
+test('two rows with one file name add a directory line only where names collide', () => {
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [
+      { path: '/work/a/report.docx', updatedAt: 1 },
+      { path: '/work/b/report.docx', updatedAt: 2 },
+      { path: '/work/c/budget.xlsx', updatedAt: 3 },
+    ], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
+  })
+  const rendered = text(tree)
+  expect(rendered).toContain('/work/a')
+  expect(rendered).toContain('/work/b')
+  // The unique name keeps no directory line at all.
+  expect(rendered).not.toContain('/work/c')
 })

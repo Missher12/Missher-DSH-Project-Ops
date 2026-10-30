@@ -52,6 +52,12 @@ export const styles = {
   action: 'po-action',
   actionIcon: 'po-action-icon',
   footer: 'po-footer',
+  categories: 'po-categories',
+  groupTitle: 'po-group-title',
+  fileHead: 'po-file-head',
+  fileButton: 'po-file-button',
+  fileReveal: 'po-file-reveal',
+  filePath: 'po-file-path',
 } as const
 
 /** Every class name the sheet must define. */

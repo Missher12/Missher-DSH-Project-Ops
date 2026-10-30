@@ -1,5 +1,6 @@
 import { RECEIPT_SCHEMA } from './receipt-schema.ts'
 import { registerDocumentTools } from './document-tools.ts'
+import { registerFileProjection } from './file-projection.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -352,6 +353,7 @@ export function apply(ctx: Context, config: HarnessConfig = {}): void {
     })
   }
   registerDocumentTools(ctx, service)
+  registerFileProjection(ctx)
   ctx.tools.register(taskListTool(service))
   ctx.tools.register(taskPlanTool(service))
   ctx.tools.register(taskRunTool(service))

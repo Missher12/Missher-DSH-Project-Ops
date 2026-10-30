@@ -2,19 +2,40 @@ import { Context } from "@deepseek-ai/cordis";
 //#region src/client/locales.d.ts
 /** Simplified Chinese dictionary (the key-set source of truth). */
 declare const zh: {
+  readonly categories: "分类";
+  readonly 'category.all': "全部";
+  readonly 'category.plans': "方案";
+  readonly 'category.word': "Word";
+  readonly 'category.excel': "Excel";
+  readonly 'category.slides': "PPT";
+  readonly 'category.pdf': "PDF";
+  readonly 'category.image': "图片";
+  readonly 'category.media': "音视频";
+  readonly 'category.other': "其他";
+  readonly 'files.loading': "加载中…";
+  readonly 'files.empty': "暂无文件";
+  readonly 'files.unavailable': "此宿主无文件索引，仍可在聊天查看";
+  readonly 'files.error': "读取失败：{error}";
+  readonly 'files.openError': "无法打开：{error}";
+  readonly 'files.reveal': "打开位置";
+  readonly 'files.revealAria': "在访达中显示：{name}";
+  readonly 'files.revealMissing': "文件已移动或删除";
+  readonly 'files.revealUnsupported': "此宿主不支持显示文件位置";
+  readonly 'files.revealError': "无法显示位置：{error}";
+  readonly 'files.truncated': "仅显示最近 1000 个文件";
   readonly title: "Project Ops";
   readonly 'trigger.label': "Project Ops";
-  readonly 'trigger.aria': "项目任务与交付记录：{count} 项";
-  readonly 'trigger.ariaEmpty': "项目任务与交付记录";
+  readonly 'trigger.aria': "项目方案与文件：{count} 项";
+  readonly 'trigger.ariaEmpty': "项目方案与文件";
   readonly refresh: "刷新";
   readonly close: "关闭";
   readonly count: "{count} 项";
-  readonly loading: "正在读取项目任务…";
-  readonly empty: "尚无开发任务。向当前会话说明开发需求后，Agent 会按任务规模维护方案与交付记录。";
+  readonly loading: "加载中…";
+  readonly empty: "暂无开发任务";
   readonly error: "无法读取项目任务";
-  readonly errorDetail: "读取失败，未修改任何文件：{error}";
+  readonly errorDetail: "读取失败：{error}";
   readonly retry: "重试";
-  readonly truncated: "任务较多，仅显示最近 100 项。";
+  readonly truncated: "仅显示最近 100 项";
   readonly 'status.current': "交付关联当前方案";
   readonly 'status.currentHint': "交付记录与当前方案修订一致；不代表验收通过、发布或安装。";
   readonly 'status.historical': "方案已更新";
@@ -23,13 +44,13 @@ declare const zh: {
   readonly 'status.inspectHint': "记录无法校验完整关联，请自行核对内容。";
   readonly 'status.missing': "方案进行中";
   readonly 'status.missingHint': "方案已保存，尚无交付记录；方案存在不代表完成、验收或发布。";
-  readonly footer: "交付记录保留历史事实，文件存在不代表已发布或安装。";
-  readonly 'unavailable.list': "此 Host 未提供工作区文件读取能力，无法列出项目任务。";
+  readonly footer: "会话文件 · 项目方案";
+  readonly 'unavailable.list': "此宿主无工作区文件读取能力";
   readonly 'unavailable.listDetail': "缺少 remote.workspaceFiles 的 list / readBytes";
-  readonly 'unavailable.preview': "此 Host 未提供原生文件预览，无法打开方案或交付。";
+  readonly 'unavailable.preview': "此宿主无原生文件预览";
   readonly 'unavailable.previewDetail': "缺少 sidebarRight.openResource";
   readonly 'view.plan': "方案";
-  readonly 'view.ready': "交付";
+  readonly 'view.ready': "交付记录";
   readonly 'view.missingPlan': "尚未生成方案";
   readonly 'view.missingReady': "尚未生成交付记录";
 };
@@ -77,7 +98,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  */
 declare const inject: string[];
 /** Optional native services, named exactly as the kernel names them. */
-declare const OPTIONAL_SERVICES: readonly ["remote.workspaceFiles", "sidebarRight"];
+declare const OPTIONAL_SERVICES: readonly ["remote.workspaceFiles", "sidebarRight", "remote.session", "sessions"];
 type OptionalService = typeof OPTIONAL_SERVICES[number];
 /**
  * Optional-service accessor of one plugin activation.

@@ -68,6 +68,26 @@
 }
 
 /*
+ * Narrow session header: keep only the icon before the label can squeeze the
+ * session title or the other header actions. The Host makes the session title
+ * row an inline-size container, so the query follows the conversation column —
+ * window resize and an open right sidebar both count — not the browser viewport.
+ * The button keeps its `title`, `aria-label`, focus and click behavior.
+ */
+@container (width <= 640px) {
+  .po-trigger {
+    justify-content: center;
+    width: 28px;
+    padding: 0;
+  }
+
+  .po-trigger-label,
+  .po-trigger-chevron {
+    display: none;
+  }
+}
+
+/*
  * Panel: portaled to the document body and fixed in the viewport, with
  * coordinates supplied inline by the shared anchored-position hook. The
  * z-index sits above the right sidebar (at most 40) and below modal overlays
@@ -340,6 +360,89 @@
 .po-action:disabled {
   color: var(--dsw-alias-label-dimmed);
   cursor: default;
+}
+
+.po-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 8px 6px;
+}
+
+.po-categories [aria-pressed='true'] {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.po-group-title {
+  margin: 8px 8px 2px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsw-font-xxs-12-font-size);
+  font-weight: 600;
+}
+
+/* File row heading: the name keeps the native preview and the compact
+   "open location" action sits beside it without widening the row. */
+.po-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.po-file-button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.po-file-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Tertiary text action: one line, no default button bevel; the native
+   file-manager handoff happens through the Host Remote, never a shell string. */
+.po-file-reveal {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsw-font-xxxs-11-font-size);
+  line-height: var(--dsw-font-xxxs-11-line-height);
+  cursor: pointer;
+}
+
+.po-file-reveal:hover:not(:disabled),
+.po-file-reveal:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.po-file-reveal:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.po-file-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsw-font-xxxs-11-font-size);
 }
 
 /* Narrow shells: the panel keeps the viewport margin and the rows stay legible

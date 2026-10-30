@@ -1,7 +1,7 @@
 {
   "name": "@missher/dsh-project-ops",
   "version": "0.4.1",
-  "description": "Project Ops：项目开发方案、交付记录与原生任务验证",
+  "description": "会话文件分类与项目方案",
   "private": false,
   "type": "module",
   "main": "lib/index.js",
@@ -34,6 +34,9 @@
     "LICENSE",
     "docs/TASK_DOCUMENTS.md",
     "docs/COMPATIBILITY.md",
+    "docs/PLUGIN_DETAIL.md",
+    "docs/PLUGIN_DETAIL.zh.md",
+    "locale",
     "docs/images"
   ],
   "scripts": {
@@ -69,7 +72,8 @@
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-api-workspace-files",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller"
       ],
       "platform": "web"
     }
@@ -82,7 +86,8 @@
     "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
     "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
     "@deepseek-ai/dsh-util-values": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh-session-projection": ">=0.2.0-rc.2 <0.3.0-0 || ^0.2.1-alpha.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -107,6 +112,9 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
       "optional": true
     }
   },
@@ -140,6 +148,10 @@
     "@deepseek-ai/dsh-client-ui-slots": "0.2.1-alpha.2",
     "@deepseek-ai/dsh-util-workspace-path": "0.2.1-alpha.2",
     "react": "^18.2.0",
-    "@types/react": "~18.3.1"
+    "@types/react": "~18.3.1",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-alpha.2"
+  },
+  "dependencies": {
+    "zod": "4.6.2"
   }
 }

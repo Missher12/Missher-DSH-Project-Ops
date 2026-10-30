@@ -1,59 +1,109 @@
 # Project Ops
 
-Version 0.4.1 uses the Host’s shared text baseline when available; older Hosts keep their original layout. Menu, panel and Host behavior stay the same as 0.4.0.
+Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It puts one entry in the session header: browse the files this conversation registered next to the project's development plans, open a file in the Host's native right-sidebar preview, or reveal it in Finder and hand the actual file to someone by copy or drag-and-drop.
 
-[桌面端](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [安装说明](INSTALL.md) · [开发任务文档](docs/TASK_DOCUMENTS.md)
+[Desktop app](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [Install](INSTALL.md) · [Task documents](docs/TASK_DOCUMENTS.md)
 
-Project Ops 为 DeepSeek Harness 提供项目任务发现、原生执行与验证回执，以及开发方案和交付记录。包名统一为 `@missher/dsh-project-ops`，沿用本仓库，没有新增兼容插件。
+## Current state
 
-当前源码版本 **0.4.1**，面向 DeepSeek Harness 0.2 系列，不要求某个精确的 Host 版本。版本判据是能力而不是版本号：插件在激活时探测自己真正调用的方法，缺少可选能力（原生 Jobs 后台、客户端文件预览等）时只关闭对应功能并说明原因，不把整块入口静默撤下。
+- `package.json` is still **0.4.1**; `main` already includes file categories, show-in-folder, concise copy and the narrow icon. This update only commits source: **no npm publish and no new tag**.
+- Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
+- A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
-2026-10-17 在三个真实宿主上做过隔离验收（各自独立 HOME/DSH_HOME、合成工作区、无外部模型调用）：社区 rc.2（DSH 0.2.0-rc.2 / Cordis 4.0.4）、社区 alpha.2（0.2.1-alpha.2 / Cordis 4.0.5-alpha.1）、官方 npm alpha.5（0.2.1-alpha.5 / Cordis 4.0.5）。前两者是社区桌面封装，不是官方原始包。**已核验的只是这三个锚点，不是版本范围允许的全部版本**；最低接口、缺能力降级与未测范围见 [兼容性矩阵](docs/COMPATIBILITY.md)。
+## What you get
 
-交付记录：本轮宽宿主兼容与界面修订见 [0.4.0 记录](https://github.com/Missher12/Missher-DSH-Project-Ops/blob/v0.4.0/docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/READY.md)（含尚未验证项），此前的文档能力见 [0.4.0-alpha.1 记录](https://github.com/Missher12/Missher-DSH-Project-Ops/blob/v0.4.0/docs/tasks/2026-10-12-task-documents-44fc988/READY.md)。两处均指向仓库中的任务记录（不在 npm 包内），历史 0.3.1 的旧 Host 证据不能代替本版本验收。
+- **Session files**: the files this conversation registered — native `present` deliveries plus successful `write`, `edit` and `str_replace_editor` changes. The list comes from session history and may keep entries later moved or deleted; text listed in an `artifacts[]` report is not a file record.
+- **Categories**: All, Plans, Word, Excel, PPT, PDF, Images, Media, Other, chosen by real extension; `plan.docx` is a Word file, never a development plan.
+- **Native preview**: clicking a file name opens the Host's own right-sidebar file preview; whether content is rendered depends on the Host's support for that format.
+- **Show in folder**: reveals and selects the file in Finder so you can copy the file itself or drag it into a chat window — not just copy its path.
+- **Development plans**: the same panel lists this project's `docs/tasks` tasks and their "Plan / Delivery record" document entries.
 
-## 找到入口
+## Use it
 
-在启用插件并加载客户端的 DSH Web / Desktop 会话标题栏点击 **Project Ops**。入口是与宿主标题栏动作一致的轻量按钮（无浏览器默认按钮外观），面板只使用宿主 `--dsw-*` 主题变量，随亮/暗主题自动适配。
+1. Install the plugin into the target profile (see [Install](INSTALL.md)).
+2. Open a session and click **Project Ops** in the session header.
+3. Filter by category; click a **file name** to open the native preview.
+4. Click **Show in folder** on the same row: Finder opens with the file selected; copy or drag it from there.
+5. Switch to the Plans area to open PLAN / delivery records. `Escape` closes the panel; `Tab` moves inside it.
 
-面板列出当前会话工作区的开发任务：以中文标题为主体，目录名仅在读不到标题时回退显示，完整目录名始终保留在任务行的 `title` 中。四种交付状态简洁区分——交付关联当前方案、历史交付（方案已更新）、待核对、尚未生成交付；**“关联当前”只表示记录与当前方案修订一致，不代表验收通过**。
+## Categories and file sources
 
-任务行分两行排版：第一行约 13px 的任务标题（可两行、完整标题保留在 `title`），第二行是 12px 可读的短状态与行内的“方案 / 交付”文档入口；两者都是无边框、hover 才出现的轻量按钮，禁用时仍可见并在 tooltip 说明原因。
+Categories are derived from the extension only, never from words such as "plan" in a name:
 
-“方案 / 交付”打开宿主原生右侧文件预览；未生成的文档按钮禁用；打开文件后面板自动收起。面板固定在视口内并做钳制，窄宽度下内容内滚动；`Escape` 或点击面板外关闭，关闭后焦点回到入口按钮。刷新使用可取消读取（最多四并发），不会与上一次读取竞争。安装包存在、源码升级与当前桌面已启用是不同状态。
+| Category | Extensions |
+| --- | --- |
+| Word | doc, docx, docm, odt, rtf |
+| Excel | xls, xlsx, xlsm, xlsb, ods, csv, tsv |
+| PPT | ppt, pptx, pptm, odp |
+| PDF | pdf |
+| Images | png, jpg, jpeg, gif, webp, svg, avif, bmp, tif, tiff |
+| Media | mp3, wav, m4a, flac, ogg, mp4, mov, webm, mkv, avi |
+| Other | everything else, including source code and text |
 
-## 界面
+- One absolute path keeps only its latest record; identical file names in different directories stay separate and gain an extra directory line when a name would otherwise be ambiguous.
+- The list follows the session's file records and is restored from Host history after a reload; at most the latest 1000 distinct paths are kept, and the limit is reported.
+- "File index unavailable" and "no files" are different states with different copy; a missing capability is never rendered as an empty list.
 
-![Project Ops 任务面板：两行任务行与四种文档状态](docs/images/task-panel-0.4.0.jpg)
+## Plans and delivery records
 
-会话标题栏的 **Project Ops** 入口打开后的面板（**亮色主题**）。截图取自 2026-10-17 的隔离合成验收：官方 npm 0.2.1-alpha.5 Web 宿主、独立合成 Profile、1280×720、无外部模型调用。任务行分两行——第一行是任务标题（长标题省略显示，完整文本保留在 tooltip），第二行是短状态与行内“方案 / 交付”入口；底部是只读说明。图中四种状态自上而下为：方案进行中、记录待核对（状态点用提醒色）、方案已更新、交付关联当前方案。
+- For a development task of real size the agent maintains `docs/tasks/<date>-<slug>-<identity>/PLAN.md`, continues it as work progresses and writes `READY.md` after the delivery review. Ordinary questions and tiny edits do not require one.
+- Task rows carry four short states: delivery linked to the current plan, plan updated, record needs review, plan in progress. **"Delivery linked to the current plan" only means the record matches the current plan revision; it is not an acceptance, a release or an install.**
+- Document entries open the native preview; missing documents stay visible but disabled with the reason in the tooltip. Opening one from the Plans area closes the panel.
 
-![点击“方案”后在宿主原生右侧栏打开 PLAN.md](docs/images/plan-preview-0.4.0.jpg)
+## Preview, show in folder and missing files
 
-点击“方案”后，文档交给宿主原生的右侧栏预览打开（此图为**深色主题**，与上一张面板截图不是同一主题批次）；未生成的文档入口保持可见但禁用，并说明原因。
+- Clicking a file name asks the Host filesystem whether the path is still accessible before opening the native preview; a moved, deleted or unreadable file shows an inline error. Whether the file renders is up to the Host's support for its format, so not every file is guaranteed a content preview.
+- "Show in folder" calls the Host's native session file-location action (`session/openWorkspacePath` with `reveal`). On macOS the Host runs `open -R`, which selects the file in Finder. The plugin never builds shell strings and never starts a service.
+- A moved or deleted file keeps its row (history stays true); clicking preview or show-in-folder reports a short error so the user can deliver the file again.
+- When the Host lacks file indexing, native preview or desktop reveal, only that capability is turned off with a notice; the panel and the other entries keep working instead of disappearing.
 
-配图只说明界面形态，不构成发布、安装或功能验收。此前的 `task-panel.jpg`、`plan-preview.jpg` 记录的是 0.4.0-alpha.2 的单行任务行布局，保留为历史界面，不代表当前布局。
+## Wide and narrow layouts
 
-当前会话 Agent 在有一定规模的开发任务开始时维护 `docs/tasks/<日期>-<slug>-<身份摘要>/PLAN.md`，按进展续写，交付检查后写 `READY.md`。普通问答和极小修改不强制生成；生成方案后继续已授权开发，不新增审批门。正文由当前会话提供，不调用另一模型；失败、取消、未验证、未发布和未安装均保留事实，不把任意回复或 shell 退出当任务完成。
+- The trigger matches the Host's session-header actions and uses `--dsw-*` theme tokens, so it follows light and dark themes.
+- With room, it shows the full **Project Ops** label and chevron; when the title row is 640px or narrower (at most 640px) the trigger keeps only the icon (28×28), hiding label and chevron.
+- The icon state keeps `title` and `aria-label` ("Project plans and files: N"), stays focusable with `Tab`, opens with `Enter` and closes with `Escape`; focus returns to the trigger.
 
-## 工具
+## Verified scope
 
-原有七项能力保持：`missher_project_ops_task_list`、`task_plan`、`task_run`、`task_collect`、`verification_gate`、`capability_search`、`doctor`（后六项同样带 `missher_project_ops_` 前缀）。新增 `missher_project_ops_document_read` 与 `missher_project_ops_document_write` 管理独立开发任务文档。
+Real install and UI acceptance this round ran on **DeepSeek Harness 0.2.1-rc.4 on macOS desktop**:
 
-任务发现只读取项目声明；执行仍交给 Agent 可见的原生 shell / Jobs。新版 Host 自动把前台等待超时命令转为后台时，Project Ops 保留原生 job ID 供收集与取消。插件不接受任意执行命令，不替代审批、沙箱、调度器或 Jobs。验证门复核回执和源码快照，未知证据不能判成功。
+- real Word and Excel files landed in the Word and Excel categories and opened in the native right-sidebar preview;
+- the files were still listed after a page refresh;
+- at a 491px-wide session title row the **Project Ops** entry was the 28px icon;
+- `Tab`, `Enter` and `Escape` behaved normally; the icon state keeps `title` and `aria-label`;
+- "Show in folder" selected the Word and the Excel file in Finder.
 
-文档写入使用 Host 文件系统与会话策略、原子版本守卫和任务身份隔离。保护根 README/READY/AGENTS，检测人工编辑和中断，重启后从磁盘续写。READY 分开记录实现、验证、Git、发布、安装和限制；文件存在不表示所有工作已完成。不会自动推 Git。详细字段与恢复语义见 [任务文档说明](docs/TASK_DOCUMENTS.md)。
+These are measured anchors, not acceptance for every platform, every Host version or every model setup. This round did not cover other platforms, older Hosts or every model combination.
 
-## 开发与验证
+## Install and update
+
+Building a local package from the current `main` source, install, reload and removal live in [Install](INSTALL.md). Install with the desktop that matches the target profile: `dsh plugin --profile <profile> add <local.tgz>`, then reload the profile and **refresh the DSH page** to load the new client UI; confirm no load error and a **Project Ops** entry in the session header. The plugin manager's detail page reads `meta.detail` from the package's `locale/<language>.json` and shows the short intro in `docs/PLUGIN_DETAIL*.md`; the GitHub README stays detailed. Never pass an old source checkout's `lib` off as the frozen package.
+
+## Develop and check
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm smoke:profile
+pnpm check:ui
 ```
 
-使用 Node `^22.19.0 || >=24.0.0`。Profile smoke 只在本仓库 `.artifacts` 内创建隔离 DSH_HOME 和合成工作区，经正式 `dsh` Profile 安装、调用、卸载。它不等于真实模型、Electron、Intel Mac 或日常安装验收。
+Node `^22.19.0 || >=24.0.0`. `pnpm test` covers host capabilities, file projection and client rendering; `pnpm check:ui` checks style classes and the UI contract; `pnpm smoke:profile` installs, calls and removes the plugin in an isolated temporary profile — that is not a real model, Electron or day-to-day install acceptance.
 
-通用 Cordis 宿主可使用 `@missher/dsh-project-ops/cordis` 与 `projectOpsHost` 适配接口，原有执行能力保留；本轮新文档与客户端能力属于 Harness 入口。历史接口与证据见 [Cordis 集成](docs/CORDIS_INTEGRATION.md)、[旧官方验收](docs/OFFICIAL_COMPAT.md)。
+## History and screenshots
+
+- 0.4.0 delivery records: [wide-Host compatibility and UI](https://github.com/Missher12/Missher-DSH-Project-Ops/blob/v0.4.0/docs/tasks/2026-10-14-wide-host-compat-5f76a32a7990cb98/READY.md) (including unverified items), [document capability](https://github.com/Missher12/Missher-DSH-Project-Ops/blob/v0.4.0/docs/tasks/2026-10-12-task-documents-44fc988/READY.md).
+- The screenshots and those records are **0.4.0-era history**. They do not include this round's file categories, show-in-folder action or concise copy, do not represent current `main`, and are not release or install acceptance.
+
+![Project Ops task panel (0.4.0 historical screenshot)](docs/images/task-panel-0.4.0.jpg)
+
+![PLAN.md opened by the Plan entry (0.4.0 historical screenshot)](docs/images/plan-preview-0.4.0.jpg)
+
+## Tools
+
+Host tools: `missher_project_ops_task_list`, `task_plan`, `task_run`, `task_collect`, `verification_gate`, `capability_search`, `doctor`, `document_read`, `document_write` (all prefixed `missher_project_ops_`). Execution stays with the Agent's native shell / Jobs; the plugin accepts no arbitrary commands and never replaces approvals, sandboxing or the scheduler. The verification gate re-checks receipts and source snapshots, unknown evidence cannot pass, and nothing is pushed to Git automatically.
+
+## Compatibility and more docs
+
+[Compatibility matrix](docs/COMPATIBILITY.md) · [Task documents](docs/TASK_DOCUMENTS.md) · [Cordis integration](docs/CORDIS_INTEGRATION.md) · [Older official acceptance](docs/OFFICIAL_COMPAT.md)

@@ -14,8 +14,10 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
+import type { RevealOutcome } from './reveal.ts'
 import { classNames, styles } from './styles.ts'
 import { taskView, type TaskLink, type TaskListResult } from './task-view.ts'
+import { FILE_CATEGORIES, fileCategory, type FilesResult, type PanelCategory } from '../delivered-files.ts'
 
 /** Translate seat of this namespace, as injected by the slot framework. */
 export type PanelTranslate = TranslateNS<typeof NS>
@@ -155,6 +157,94 @@ export interface PanelProps {
   onRefresh: () => void
   onClose: () => void
   onOpen: (task: string, file: 'PLAN.md' | 'READY.md') => void
+  category?: PanelCategory
+  onCategory?: (category: PanelCategory) => void
+  files?: FilesResult | undefined
+  fileError?: string | undefined
+  fileBusy?: boolean
+  openingFile?: string | undefined
+  openError?: { path: string; message: string } | undefined
+  onOpenFile?: (path: string) => void
+  /** File whose "open location" request is in flight. */
+  revealing?: string | undefined
+  /** Why the last "open location" request did not reach the file manager. */
+  revealError?: { path: string; outcome: RevealOutcome; message: string } | undefined
+  onRevealFile?: (path: string) => void
+}
+
+/** Last path segment of one delivered file, in either separator style. */
+function baseName(path: string): string {
+  return path.split(/[\\/]/u).at(-1) ?? path
+}
+
+/** Parent directory of one delivered file, kept verbatim apart from the basename. */
+function parentPath(path: string): string {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return cut <= 0 ? path : path.slice(0, cut)
+}
+
+/** One short sentence for a reveal refusal, in the panel's dictionary. */
+function revealMessage(revealError: { outcome: RevealOutcome; message: string }, t: PanelTranslate): string {
+  if (revealError.outcome === 'missing') return t('files.revealMissing')
+  if (revealError.outcome === 'unsupported') return t('files.revealUnsupported')
+  return t('files.revealError', { error: revealError.message })
+}
+
+function DeliveredFileGroups({ t, files, fileError, fileBusy, openingFile, openError, onOpenFile, revealing, revealError, onRevealFile, category = 'all', availability }: PanelProps): ReactElement | null {
+  if (category === 'plans') return null
+  if (fileError) return <div className={classNames(styles.notice, styles.noticeError)} role="alert">{t('files.error', { error: fileError })}</div>
+  if (fileBusy) return <div className={styles.notice} role="status">{t('files.loading')}</div>
+  if (files?.unavailable) return <div className={styles.notice}>{t('files.unavailable')}</div>
+  if (!files) return null
+  // The row keeps only the name and the open-location action; the full path and
+  // the delivery note live in the name's tooltip. A directory line is added only
+  // where two rows would otherwise share one visible name.
+  const occurrences = new Map<string, number>()
+  for (const file of files.files) occurrences.set(baseName(file.path), (occurrences.get(baseName(file.path)) ?? 0) + 1)
+  const groups = FILE_CATEGORIES.filter(kind => category === 'all' || category === kind)
+    .map(kind => ({ kind, rows: files.files.filter(file => fileCategory(file.path) === kind) })).filter(group => group.rows.length)
+  return <>
+    {groups.length === 0 ? <div className={styles.notice}>{t('files.empty')}</div> : null}
+    {groups.map(group => <section key={group.kind} aria-label={t(`category.${group.kind}`)}>
+      <h3 className={styles.groupTitle}>{t(`category.${group.kind}`)}</h3>
+      <ul className={styles.list}>
+        {group.rows.map(file => {
+          const name = baseName(file.path)
+          const title = [availability.preview ? undefined : availability.previewReason ?? t('unavailable.preview'), file.path, file.description]
+            .filter((line): line is string => typeof line === 'string' && line.length > 0).join('\n')
+          return <li key={file.path} className={styles.row}>
+          <div className={styles.rowMain}>
+            <div className={styles.fileHead}>
+              <button type="button" className={styles.fileButton}
+                title={title}
+                disabled={!availability.preview || openingFile === file.path || !onOpenFile}
+                onClick={() => { onOpenFile?.(file.path) }}>
+                <IconDeliverDocRegular size={14} className={styles.actionIcon} />
+                <span className={styles.rowTitle}>{name}</span>
+              </button>
+              {onRevealFile
+                ? (
+                  <button type="button" className={styles.fileReveal}
+                    title={t('files.reveal')}
+                    aria-label={t('files.revealAria', { name })}
+                    disabled={revealing === file.path}
+                    onClick={() => { onRevealFile(file.path) }}>
+                    {t('files.reveal')}
+                  </button>
+                )
+                : null}
+            </div>
+            {(occurrences.get(name) ?? 0) > 1
+              ? <span className={styles.filePath} title={file.path}>{parentPath(file.path)}</span>
+              : null}
+            {openError?.path === file.path ? <span className={classNames(styles.notice, styles.noticeError)} role="alert">{t('files.openError', { error: openError.message })}</span> : null}
+            {revealError?.path === file.path ? <span className={classNames(styles.notice, styles.noticeError)} role="alert">{revealMessage(revealError, t)}</span> : null}
+          </div>
+        </li>})}
+      </ul>
+    </section>)}
+    {files.truncated ? <div className={styles.notice}>{t('files.truncated')}</div> : null}
+  </>
 }
 
 /** One notice line for a capability this Host does not expose; the service name stays in the tooltip. */
@@ -177,6 +267,9 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
   const { t, open, position, measureStyle, panelRef, result, error, busy, availability, onRefresh, onClose, onOpen } = props
   if (!open) return null
   const preview = { available: availability.preview, reason: availability.previewReason ?? t('unavailable.preview') }
+  const category = props.category ?? 'all'
+  const showPlans = category === 'all' || category === 'plans'
+  const count = (result?.tasks.length ?? 0) + (props.files?.files.length ?? 0)
   return (
     <section
       ref={panelRef}
@@ -185,12 +278,12 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
       role="dialog"
       aria-label={t('title')}
       tabIndex={-1}
-      aria-busy={busy}
+      aria-busy={busy || Boolean(props.fileBusy)}
     >
       <header className={styles.header}>
         <span className={styles.headerTitle}>{t('title')}</span>
         <span className={styles.headerCount}>
-          {availability.list && result !== undefined ? t('count', { count: result.tasks.length }) : ''}
+          {result !== undefined || props.files !== undefined && !props.files.unavailable ? t('count', { count }) : ''}
         </span>
         <button
           type="button"
@@ -199,7 +292,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           title={t('refresh')}
           onClick={onRefresh}
         >
-          <IconRefreshOutlineRegular size={14} className={busy ? styles.spin : undefined} />
+          <IconRefreshOutlineRegular size={14} className={busy || props.fileBusy ? styles.spin : undefined} />
         </button>
         <button
           type="button"
@@ -211,6 +304,13 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           <IconCloseOutlineRegular size={14} />
         </button>
       </header>
+      {props.onCategory ? <nav className={styles.categories} aria-label={t('categories')}>
+        {(['all', 'plans', ...FILE_CATEGORIES] as const).map(kind => <button key={kind} type="button" className={styles.action}
+          aria-pressed={category === kind} onClick={() => { props.onCategory?.(kind) }}>{t(`category.${kind}`)}</button>)}
+      </nav> : null}
+      <DeliveredFileGroups {...props} />
+      {showPlans ? <>
+      {props.files ? <h3 className={styles.groupTitle}>{t('category.plans')}</h3> : null}
       {!availability.list
         ? <UnavailableNotice text={availability.listReason ?? t('unavailable.list')} detail={t('unavailable.listDetail')} />
         : null}
@@ -252,6 +352,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
           <div className={styles.notice}>{t('truncated')}</div>
         )
         : null}
+      </> : null}
       <footer className={styles.footer} title={t('footer')}>{t('footer')}</footer>
     </section>
   )

@@ -40,9 +40,10 @@ const PLATFORM_STUBS = new Map([
 export const REQUIRED_ENTRIES = [
   'LICENSE', 'README.md', 'README.zh.md', 'README.i18n.yaml', 'package.json', 'cordis.patch.yml',
   'docs/AGENT_USAGE.md', 'docs/CORDIS_INTEGRATION.md', 'docs/OFFICIAL_COMPAT.md',
+  'docs/PLUGIN_DETAIL.md', 'docs/PLUGIN_DETAIL.zh.md', 'locale/en.json', 'locale/zh.json', 'locale/zh-CN.json',
   'lib/browser/client.js', 'lib/client/index.js', 'lib/client/index.d.ts', 'lib/index.js', 'lib/index.d.ts', 'lib/cordis.js', 'lib/cordis.d.ts',
 ].map(name => `package/${name}`)
-export const ALLOWED_ENTRY = /^package\/(?:lib\/(?:(?:client|browser)\/)?[A-Za-z0-9_.-]+\.(?:js|d\.ts)|docs\/(?:AGENT_USAGE|CORDIS_INTEGRATION|OFFICIAL_COMPAT|TASK_DOCUMENTS|COMPATIBILITY)\.md|docs\/images\/[A-Za-z0-9_.-]+\.(?:png|jpg|webp|md)|README(?:\.zh\.md|\.md|\.i18n\.yaml)|LICENSE|cordis\.patch\.yml|package\.json)$/u
+export const ALLOWED_ENTRY = /^package\/(?:lib\/(?:(?:client|browser)\/)?[A-Za-z0-9_.-]+\.(?:js|d\.ts)|docs\/(?:AGENT_USAGE|CORDIS_INTEGRATION|OFFICIAL_COMPAT|TASK_DOCUMENTS|COMPATIBILITY|PLUGIN_DETAIL(?:\.zh)?)\.md|docs\/images\/[A-Za-z0-9_.-]+\.(?:png|jpg|webp|md)|locale\/[A-Za-z0-9_.-]+\.json|README(?:\.zh\.md|\.md|\.i18n\.yaml)|LICENSE|cordis\.patch\.yml|package\.json)$/u
 
 /**
  * Host peer ranges Project Ops is verified against: one branch per release line,

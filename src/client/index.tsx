@@ -11,9 +11,11 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { documentStatus } from './document-status.ts'
 import { en, NS, zh, type ProjectOpsKey } from './locales.ts'
+import { revealFileLocation, type RevealRemotes } from './reveal.ts'
 import { ProjectOpsAction, type Face } from './ProjectOpsAction.tsx'
 import { installStyles } from './styles.ts'
 import type { TaskLink, TaskListResult } from './task-view.ts'
+import { FILES_PROJECTION, isDeliveredFiles, type FilesResult } from '../delivered-files.ts'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -42,7 +44,7 @@ export type { TaskLink, TaskListResult } from './task-view.ts'
 export const inject = ['slots', 'locale']
 
 /** Optional native services, named exactly as the kernel names them. */
-export const OPTIONAL_SERVICES = ['remote.workspaceFiles', 'sidebarRight'] as const
+export const OPTIONAL_SERVICES = ['remote.workspaceFiles', 'sidebarRight', 'remote.session', 'sessions'] as const
 export type OptionalService = typeof OPTIONAL_SERVICES[number]
 
 /** Whether a live service actually exposes every method this panel calls. */
@@ -109,6 +111,43 @@ export function apply(ctx: Context): void {
     order: 140,
     inject: (sessionId: SessionId): Face => ({
       surface: () => ({ list: workspaceFiles() !== undefined, preview: preview() !== undefined }),
+      async files(signal): Promise<FilesResult> {
+        const remote = optional.get('remote.session') as { projections?: (request: { sessionId: SessionId }, signal: AbortSignal) => Promise<{
+          ok: boolean; value?: { kind?: string; values: Record<string, unknown> } | null; error?: { message: string }
+        }> } | undefined
+        if (typeof remote?.projections !== 'function') return { files: [], truncated: false, unavailable: true }
+        const response = await remote.projections({ sessionId }, signal)
+        if (!response.ok) throw new Error(response.error?.message ?? 'File history unavailable')
+        const value = response.value?.kind === 'sequenced' ? response.value.values[FILES_PROJECTION] : undefined
+        return isDeliveredFiles(value) ? value : { files: [], truncated: false, unavailable: true }
+      },
+      watchFiles(changed) {
+        const sessions = optional.get('sessions') as { binding?: (id: SessionId) => {
+          session: { projections: { faceOf: (key: string) => { subscribe: (listener: () => void) => () => void } } }
+        } | undefined } | undefined
+        const source = sessions?.binding?.(sessionId)?.session.projections.faceOf(FILES_PROJECTION)
+        return source?.subscribe(changed) ?? (() => {})
+      },
+      async openFile(path, signal) {
+        const sidebar = preview()
+        if (!sidebar) throw new Error('Native file preview unavailable')
+        const files = optional.get('remote.workspaceFiles') as Context['remote']['workspaceFiles'] | undefined
+        if (typeof files?.stat !== 'function') throw new Error('File availability check unavailable')
+        const response = await files.stat(sessionId, path, signal)
+        if (!response.ok) throw new Error(response.error.message)
+        signal.throwIfAborted()
+        sidebar.openResource(sessionFileAddress(sessionId, path))
+      },
+      async revealFile(path, signal) {
+        const session = optional.get('remote.session') as RevealRemotes['session'] | undefined
+        const files = optional.get('remote.workspaceFiles') as RevealRemotes['files'] | undefined
+        // exactOptionalPropertyTypes: absent services are omitted, never set to undefined.
+        const remotes: RevealRemotes = {
+          ...(session === undefined ? {} : { session }),
+          ...(files === undefined ? {} : { files }),
+        }
+        await revealFileLocation(remotes, sessionId, path, signal)
+      },
       async list(signal): Promise<TaskListResult> {
         const files = workspaceFiles()
         if (files === undefined) throw new Error('the workspace-files remote (remote.workspaceFiles.list/readBytes) is unavailable on this Host')
