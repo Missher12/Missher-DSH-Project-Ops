@@ -1,5 +1,6 @@
 /node_modules
 # lib is tracked: include new chunks when regenerating the distributable.
+/.lib-backup/
 coverage/
 *.tgz
 .DS_Store
