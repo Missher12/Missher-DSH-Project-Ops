@@ -6,7 +6,7 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 
 ## 当前状态
 
-- `package.json` 版本仍为 **0.4.1**；当前 main 已包含文件分类、打开位置与精简界面等新改动。本次更新仅提交源码，**没有执行 npm 发布，也没有新增 tag**。
+- `package.json` 版本为 **0.4.2**，与 main 上文件分类、打开位置与精简界面等改动一致；`v0.4.2` 标签与 Release 提供对应安装包。
 - 面向 DeepSeek Harness 0.2 系列；兼容性按插件真正调用的能力探测，而不是绑定某个精确的 Host 版本号。
 - 安装包存在、源码已升级、目标 profile 已加载是三种不同状态；以实际安装来源和宿主实际加载结果为准。
 

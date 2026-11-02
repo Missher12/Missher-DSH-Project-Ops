@@ -1,4 +1,16 @@
-# Project Ops 0.4.1：标题栏文字对齐
+# Project Ops 0.4.2：交付文件分类与界面精简
+
+本版把 `main` 上 0.4.1 之后的功能提交转为正式发布：按 Word / Excel 等类别整理当前会话交付的实际文件，在访达中定位文件，精简入口与面板界面，并保持文档预览、权限与版本保护不变。
+
+本地验证（macOS，2026-11-02）：TypeScript 类型检查、UI 合约检查、peer 范围检查通过；vitest 23 个文件 191 项全部通过。构建脚本因本机 Node 24 对 rolldown 原生绑定的代码签名限制未能重跑；安装包中的 `lib` 沿用 `main` 提交 `5efe61c` 的已提交构建，本次版本差异只在 `package.json` 与文档。
+
+冻结安装包 `missher-dsh-project-ops-0.4.2.tgz`，SHA-256 `189d096c4de0e1a2d8919e2c6feb728de5e21b7f5921780fb9fb3db0ff6a94cf`，267236 bytes。源码交付与正式 Release 分开记录：下载资产是否已发布以 [Releases](https://github.com/Missher12/Missher-DSH-Project-Ops/releases) 为准。
+
+[本版正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.2) 已公开，非草稿、非预发布。
+
+## 历史交付
+
+### Project Ops 0.4.1：标题栏文字对齐
 
 Project Ops 入口跟随宿主提供的共享文字基线，与会话标题、智能体团队和模式标签对齐。旧宿主没有该布局能力时保持原来的居中方式，不新增版本限制。任务面板与后端行为沿用 0.4.0。
 
@@ -8,9 +20,7 @@ Project Ops 入口跟随宿主提供的共享文字基线，与会话标题、�
 
 [本版正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.1) 已公开，非草稿、非预发布；安装包与校验文件已匿名下载复核，摘要与本机安装候选一致。当前 Ubuntu 已安装并完成标题栏原生截图检查。
 
-## 历史交付
-
-Project Ops 0.4.0
+### Project Ops 0.4.0
 
 本版将宿主精确版本限制改为版本范围，并按可用接口降级可选功能；修复官方 alpha.5 的客户端远端服务访问。任务入口采用 DSH 主题、紧凑两行列表，方案与交付打开原生文件预览。原生执行、后台任务归属、权限和文档版本保护保留。
 
