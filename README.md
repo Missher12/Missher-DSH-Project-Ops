@@ -6,7 +6,7 @@ Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It pu
 
 ## Current state
 
-- `package.json` is **0.4.2** and matches `main` (file categories, show-in-folder, concise copy and the narrow icon); the `v0.4.2` tag and Release carry the matching tarball.
+- Current version: **1.0.0**. Download the matching package and checksum from the [v1.0.0 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.0).
 - Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
 - A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
@@ -88,6 +88,8 @@ pnpm test
 pnpm build
 pnpm check:ui
 ```
+
+On macOS, build with a Node that does not enable the hardened runtime: the DSH-bundled runtime rejects npm's unsigned native bindings (`mapped file has no cdhash`), while a non-hardened Node loads them. If a native binding crashes, remove `node_modules`, run `pnpm install --frozen-lockfile` again, then `pnpm build`; a failed build restores the previous `lib` instead of deleting it.
 
 Node `^22.19.0 || >=24.0.0`. `pnpm test` covers host capabilities, file projection and client rendering; `pnpm check:ui` checks style classes and the UI contract; `pnpm smoke:profile` installs, calls and removes the plugin in an isolated temporary profile — that is not a real model, Electron or day-to-day install acceptance.
 

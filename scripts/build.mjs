@@ -46,8 +46,8 @@ try {
     : typeof error?.status === 'number' ? `exit ${String(error.status)}` : 'unknown failure'
   console.error(`build failed (${reason}); ${kept ? 'previous lib restored' : 'no previous lib to restore'}`)
   // The native bundler binding is the usual failure on a hardened macOS Node:
-  // an ad-hoc signed binding cannot load next to a Team-ID-signed runtime.
-  console.error('if this crashed in rolldown, reinstall the native binding or build under a non-hardened Node')
+  // an unsigned or ad-hoc signed binding cannot load next to a signed runtime.
+  console.error('if a native binding crashed: remove node_modules, run pnpm install --frozen-lockfile, and build with a standard (non-hardened) Node')
   process.exit(1)
 }
 rmSync(backup, { recursive: true, force: true })

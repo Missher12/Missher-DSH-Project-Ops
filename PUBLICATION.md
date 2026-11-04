@@ -1,14 +1,39 @@
-# Project Ops 0.4.2：交付文件分类与界面精简
+# Project Ops 1.0.0
+
+1.0.0 提供会话文件分类、文件预览与打开位置、独立的项目方案、精简界面与窄栏图标。本轮修复了 0.4.2 遗留的本机构建环境问题，安装包由当前源码重新构建。
+
+## 构建根因与修复（2026-11-05，macOS）
+
+- 旧 `node_modules` 中的原生绑定与 npm registry 发布内容不一致，旧 yuku 绑定加载即崩溃，导致 `tsdown` 无法完成类型产物构建。
+- 本机 DSH 自带的 hardened Node 无法加载 npm 的未签名原生绑定，报 `mapped file has no cdhash`。
+- 按锁文件重新安装依赖（`pnpm install --frozen-lockfile`），并用标准 Node v24.22.1 构建后成功。未修改依赖签名或系统安全设置；构建脚本保留失败时恢复上一份 `lib` 的保护，并补充了修复提示。
+
+## 真实检查（2026-11-05）
+
+- DSH 完成依赖重装和构建后，Codex 独立执行 `pnpm run build` 再次成功，生成服务端、客户端与类型产物；重新生成的 `lib` 与仓库产物一致。
+- `tsc --noEmit` 通过；vitest 23 个文件 191 项全部通过；`check:ui` 通过；打包后的归档检查通过。
+
+安装包 `missher-dsh-project-ops-1.0.0.tgz`，SHA-256 `6d88bbc8272a6d92c01d11d23d834aaa04512a5a78e01ddec16471600c53fa08`，`267468` bytes。
+
+## 下载与安装
+
+[v1.0.0 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.0) 提供安装包与 `SHA256SUMS`，安装步骤见 [INSTALL.md](INSTALL.md)。本轮未执行 npm 发布，未安装到日常 profile，未做新的界面复测。
+
+## 未覆盖
+
+其他平台、旧 Host 版本及所有模型组合不在本轮范围；1.0.0 的界面与功能验收沿用 0.4.2 已记录的范围，不重复声称新的界面验收。
+
+## 历史交付
+
+### Project Ops 0.4.2：交付文件分类与界面精简（历史）
 
 本版把 `main` 上 0.4.1 之后的功能提交转为正式发布：按 Word / Excel 等类别整理当前会话交付的实际文件，在访达中定位文件，精简入口与面板界面，并保持文档预览、权限与版本保护不变。
 
-本地验证（macOS，2026-11-02）：TypeScript 类型检查、UI 合约检查、peer 范围检查通过；vitest 23 个文件 191 项全部通过。构建脚本因本机 Node 24 对 rolldown 原生绑定的代码签名限制未能重跑；安装包中的 `lib` 沿用 `main` 提交 `5efe61c` 的已提交构建，本次版本差异只在 `package.json` 与文档。
+本地验证（macOS，2026-11-02）：TypeScript 类型检查、UI 合约检查、peer 范围检查通过；vitest 23 个文件 191 项全部通过。构建脚本因本机 Node 24 对 rolldown 原生绑定的代码签名限制未能重跑；安装包中的 `lib` 沿用 `main` 提交 `5efe61c` 的已提交构建，本次版本差异只在 `package.json` 与文档。该构建限制已在 1.0.0 查明并修复。
 
 冻结安装包 `missher-dsh-project-ops-0.4.2.tgz`，SHA-256 `189d096c4de0e1a2d8919e2c6feb728de5e21b7f5921780fb9fb3db0ff6a94cf`，267236 bytes。源码交付与正式 Release 分开记录：下载资产是否已发布以 [Releases](https://github.com/Missher12/Missher-DSH-Project-Ops/releases) 为准。
 
 [本版正式 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v0.4.2) 已公开，非草稿、非预发布。
-
-## 历史交付
 
 ### Project Ops 0.4.1：标题栏文字对齐
 
