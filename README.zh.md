@@ -6,7 +6,7 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 
 ## 当前状态
 
-- 当前版本 **1.0.0**，安装包与校验和见 [v1.0.0 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.0)。
+- 当前版本 **1.0.1**，安装包与校验和见 [v1.0.1 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.1)。
 - 面向 DeepSeek Harness 0.2 系列；兼容性按插件真正调用的能力探测，而不是绑定某个精确的 Host 版本号。
 - 安装包存在、源码已升级、目标 profile 已加载是三种不同状态；以实际安装来源和宿主实际加载结果为准。
 
@@ -43,6 +43,16 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 - 同一绝对路径只保留最新一条记录；不同目录下的同名文件分别保留，并在名字冲突时额外显示一行目录。
 - 列表随会话文件记录更新，重载后由宿主历史恢复；最多保留最近 1000 个不同路径，达到上限会提示。
 - 文件索引不可用与“暂无文件”是两种状态，分别提示，不会把缺少能力说成没有文件。
+
+## 搜索记录
+
+新增的**搜索**页签记录本会话的原生搜索结果；它与交付文件相互独立，不会把搜索命中变成新的交付：
+
+- 来源：`glob` 的 `meta.paths`、`grep` 的 `meta.files[].path`、`web_search` 的 `meta.sources[]`（标题 + http(s) 链接），`statusCode` 为 2xx 的成功 `web_fetch`（`meta.url`，显示在**已打开网页**），以及 `session_search`/`session_event_search` 的 `query` 参数。
+- 只保存结构化元数据：不保存 grep 命中行、网页摘要或正文，也不从自由文本反推路径。
+- 本地命中可打开原生预览和“打开位置”；网页来源是普通 http(s) 链接。同一次调用内去重；相对命中按工具当时的 `working-directory/change` 解析，没有已知绝对工作目录的相对命中直接省略，不生成错误的可点击路径。
+- 失败的调用显示为失败，不产生命中；零命中搜索保留；宿主截断（`truncated`/`total`）与插件自身限额（50 次搜索、每次 100 个路径和 50 个来源）都会明确提示未完整展示。
+- 记录按会话隔离。旧宿主没有该投影时显示“此宿主无搜索记录”；回放只补齐宿主仍保留的原生事件（checkpoint/窗口），不会重新执行搜索。`session_search`/`session_event_search` 在本宿主没有结构化结果元数据，因此只记录查询词（显示“结果见会话”），不解析也不搬运会话正文。
 
 ## 方案与交付记录
 

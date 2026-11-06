@@ -9,6 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import { FileError, classifyHostFileFailure } from './file-errors.ts'
 import { documentStatus } from './document-status.ts'
 import { en, NS, zh, type ProjectOpsKey } from './locales.ts'
 import { revealFileLocation, type RevealRemotes } from './reveal.ts'
@@ -16,6 +17,7 @@ import { ProjectOpsAction, type Face } from './ProjectOpsAction.tsx'
 import { installStyles } from './styles.ts'
 import type { TaskLink, TaskListResult } from './task-view.ts'
 import { FILES_PROJECTION, isDeliveredFiles, type FilesResult } from '../delivered-files.ts'
+import { SEARCH_PROJECTION, isSearchHistory, type SearchResult } from '../search-history.ts'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -121,12 +123,25 @@ export function apply(ctx: Context): void {
         const value = response.value?.kind === 'sequenced' ? response.value.values[FILES_PROJECTION] : undefined
         return isDeliveredFiles(value) ? value : { files: [], truncated: false, unavailable: true }
       },
+      async search(signal): Promise<SearchResult> {
+        const remote = optional.get('remote.session') as { projections?: (request: { sessionId: SessionId }, signal: AbortSignal) => Promise<{
+          ok: boolean; value?: { kind?: string; values: Record<string, unknown> } | null; error?: { message: string }
+        }> } | undefined
+        if (typeof remote?.projections !== 'function') return { searches: [], truncated: false, unavailable: true }
+        const response = await remote.projections({ sessionId }, signal)
+        if (!response.ok) throw new Error(response.error?.message ?? 'Search history unavailable')
+        const value = response.value?.kind === 'sequenced' ? response.value.values[SEARCH_PROJECTION] : undefined
+        return isSearchHistory(value) ? value : { searches: [], truncated: false, unavailable: true }
+      },
       watchFiles(changed) {
         const sessions = optional.get('sessions') as { binding?: (id: SessionId) => {
           session: { projections: { faceOf: (key: string) => { subscribe: (listener: () => void) => () => void } } }
         } | undefined } | undefined
-        const source = sessions?.binding?.(sessionId)?.session.projections.faceOf(FILES_PROJECTION)
-        return source?.subscribe(changed) ?? (() => {})
+        const projections = sessions?.binding?.(sessionId)?.session.projections
+        const subscriptions = [FILES_PROJECTION, SEARCH_PROJECTION].map(key => {
+          try { return projections?.faceOf(key).subscribe(changed) } catch { return undefined }
+        }).filter((off): off is () => void => typeof off === 'function')
+        return () => { for (const off of subscriptions) off() }
       },
       async openFile(path, signal) {
         const sidebar = preview()
@@ -134,7 +149,14 @@ export function apply(ctx: Context): void {
         const files = optional.get('remote.workspaceFiles') as Context['remote']['workspaceFiles'] | undefined
         if (typeof files?.stat !== 'function') throw new Error('File availability check unavailable')
         const response = await files.stat(sessionId, path, signal)
-        if (!response.ok) throw new Error(response.error.message)
+        if (!response.ok) {
+          // Missing and permission refusals get their own sentence; every other
+          // failure (capability, malformed path, I/O) keeps its Host detail.
+          const failure = classifyHostFileFailure(response.error)
+          throw failure === undefined
+            ? new Error(response.error.message)
+            : new FileError(failure, response.error.message)
+        }
         signal.throwIfAborted()
         sidebar.openResource(sessionFileAddress(sessionId, path))
       },

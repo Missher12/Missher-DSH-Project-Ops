@@ -17,10 +17,13 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { ProjectOpsPanel, ProjectOpsTrigger, type PanelAvailability } from './ProjectOpsPanel.tsx'
+import { FileError, type FileOutcome } from './file-errors.ts'
 import { RevealError, type RevealOutcome } from './reveal.ts'
+import { beginRead, failRead, readFor, type SessionRead } from './session-read.ts'
 import { styles } from './styles.ts'
 import type { TaskListResult } from './task-view.ts'
 import type { FilesResult, PanelCategory } from '../delivered-files.ts'
+import type { SearchResult } from '../search-history.ts'
 
 /** Registration-side business face: one bounded read and the native preview opener. */
 export interface Face {
@@ -34,6 +37,8 @@ export interface Face {
   /** Open one document in the native right-sidebar file preview. */
   open: (task: string, file: 'PLAN.md' | 'READY.md') => void
   files: (signal: AbortSignal) => Promise<FilesResult>
+  /** Read this session's native search history. */
+  search: (signal: AbortSignal) => Promise<SearchResult>
   watchFiles: (changed: () => void) => () => void
   openFile: (path: string, signal: AbortSignal) => Promise<void>
   /** Reveal one delivered file in the Host desktop's file manager. */
@@ -60,23 +65,35 @@ const FOCUSABLE = 'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"
  * @param props - locale seat, session id, and the injected read/preview face.
  * @returns the trigger plus, while open, the portaled panel.
  */
-export function ProjectOpsAction({ t, surface, list, open, files, watchFiles, openFile, revealFile, sessionId }: ProjectOpsActionProps) {
+export function ProjectOpsAction({ t, surface, list, open, files, search, watchFiles, openFile, revealFile, sessionId }: ProjectOpsActionProps) {
   const [expanded, setExpanded] = useState(false)
   const [reload, setReload] = useState(0)
-  const [result, setResult] = useState<TaskListResult>()
-  const [error, setError] = useState<string>()
+  const [taskData, setTaskData] = useState<SessionRead<TaskListResult>>()
   const [busy, setBusy] = useState(false)
   const [category, setCategory] = useState<PanelCategory>('all')
-  const [fileResult, setFileResult] = useState<FilesResult>()
-  const [fileError, setFileError] = useState<string>()
+  const [fileData, setFileData] = useState<SessionRead<FilesResult>>()
   const [fileBusy, setFileBusy] = useState(false)
+  const [searchData, setSearchData] = useState<SessionRead<SearchResult>>()
+  const [searchBusy, setSearchBusy] = useState(false)
   const [fileReload, setFileReload] = useState(0)
   const [openingFile, setOpeningFile] = useState<string>()
-  const [openError, setOpenError] = useState<{ path: string; message: string }>()
+  const [openError, setOpenError] = useState<{ path: string; outcome: FileOutcome; message: string }>()
   const [revealing, setRevealing] = useState<string>()
   const [revealError, setRevealError] = useState<{ path: string; outcome: RevealOutcome; message: string }>()
   const fileOpenController = useRef<AbortController>()
   const revealController = useRef<AbortController>()
+  // A read belongs to one session: a switch shows no stale rows, errors or
+  // count, while a background refresh keeps this session's last successful rows
+  // mounted (with their DOM nodes and focus) until the new result lands.
+  const taskRead = readFor(taskData, sessionId)
+  const fileRead = readFor(fileData, sessionId)
+  const result = taskRead?.result
+  const error = taskRead?.error
+  const fileResult = fileRead?.result
+  const fileError = fileRead?.error
+  const searchRead = readFor(searchData, sessionId)
+  const searchResult = searchRead?.result
+  const searchError = searchRead?.error
   // Observed per render: a Host that adds or drops an optional service changes
   // only the affected half of the panel, never the plugin's activation.
   const availability: PanelAvailability = surface()
@@ -86,26 +103,25 @@ export function ProjectOpsAction({ t, surface, list, open, files, watchFiles, op
   const panelRef = useRef<HTMLElement>(null)
 
   // One read per open/refresh/session: the effect's cleanup aborts the previous
-  // request, so a refresh can never race its predecessor into the panel.
+  // request, so a refresh can never race its predecessor into the panel. The
+  // last successful rows stay visible while this read runs.
   useEffect(() => {
     if (!expanded) return
     // Without the workspace-files remote there is nothing to read: the panel
     // renders the capability notice instead of a read that cannot succeed.
     if (!canList) {
-      setResult(undefined)
-      setError(undefined)
+      setTaskData({ sessionId })
       setBusy(false)
       return
     }
     const controller = new AbortController()
     setBusy(true)
-    setResult(undefined)
-    setError(undefined)
+    setTaskData(previous => beginRead(previous, sessionId))
     void list(controller.signal).then(
-      (value) => { if (!controller.signal.aborted) { setResult(value); setBusy(false) } },
+      (value) => { if (!controller.signal.aborted) { setTaskData({ sessionId, result: value }); setBusy(false) } },
       (reason: unknown) => {
         if (controller.signal.aborted) return
-        setError(reason instanceof Error ? reason.message : String(reason))
+        setTaskData(previous => failRead(previous, sessionId, reason instanceof Error ? reason.message : String(reason)))
         setBusy(false)
       },
     )
@@ -118,18 +134,38 @@ export function ProjectOpsAction({ t, surface, list, open, files, watchFiles, op
   }, [expanded, sessionId, watchFiles])
 
   useEffect(() => {
-    if (!expanded) return
+    // One full projections snapshot per update: the files half reads only while
+    // the files view is showing; the search tab reads its own data lazily.
+    if (!expanded || category === 'search') return
     const controller = new AbortController()
     setFileBusy(true)
-    setFileResult(undefined)
-    setFileError(undefined)
+    setFileData(previous => beginRead(previous, sessionId))
     void files(controller.signal).then(value => {
-      if (!controller.signal.aborted) { setFileResult(value); setFileBusy(false) }
+      if (!controller.signal.aborted) { setFileData({ sessionId, result: value }); setFileBusy(false) }
     }, reason => {
-      if (!controller.signal.aborted) { setFileError(reason instanceof Error ? reason.message : String(reason)); setFileBusy(false) }
+      if (!controller.signal.aborted) {
+        setFileData(previous => failRead(previous, sessionId, reason instanceof Error ? reason.message : String(reason)))
+        setFileBusy(false)
+      }
     })
     return () => { controller.abort() }
-  }, [expanded, reload, fileReload, files, sessionId])
+  }, [expanded, category, reload, fileReload, files, sessionId])
+
+  useEffect(() => {
+    if (!expanded || category !== 'search') return
+    const controller = new AbortController()
+    setSearchBusy(true)
+    setSearchData(previous => beginRead(previous, sessionId))
+    void search(controller.signal).then(value => {
+      if (!controller.signal.aborted) { setSearchData({ sessionId, result: value }); setSearchBusy(false) }
+    }, reason => {
+      if (!controller.signal.aborted) {
+        setSearchData(previous => failRead(previous, sessionId, reason instanceof Error ? reason.message : String(reason)))
+        setSearchBusy(false)
+      }
+    })
+    return () => { controller.abort() }
+  }, [expanded, category, reload, fileReload, search, sessionId])
 
   useEffect(() => {
     setOpeningFile(undefined)
@@ -169,7 +205,12 @@ export function ProjectOpsAction({ t, surface, list, open, files, watchFiles, op
     void openFile(path, controller.signal).then(() => {
       if (!controller.signal.aborted) close()
     }, reason => {
-      if (!controller.signal.aborted) setOpenError({ path, message: reason instanceof Error ? reason.message : String(reason) })
+      if (controller.signal.aborted) return
+      setOpenError({
+        path,
+        outcome: reason instanceof FileError ? reason.outcome : 'failed',
+        message: reason instanceof Error ? reason.message : String(reason),
+      })
     }).finally(() => { if (!controller.signal.aborted) setOpeningFile(undefined) })
   }, [openFile, close])
 
@@ -252,6 +293,9 @@ export function ProjectOpsAction({ t, surface, list, open, files, watchFiles, op
             revealing={revealing}
             revealError={revealError}
             onRevealFile={revealDeliveredFile}
+            searches={searchResult}
+            searchError={searchError}
+            searchBusy={searchBusy}
           />,
           document.body,
         )

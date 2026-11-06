@@ -6,7 +6,7 @@ Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It pu
 
 ## Current state
 
-- Current version: **1.0.0**. Download the matching package and checksum from the [v1.0.0 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.0).
+- Current version: **1.0.1**. Download the matching package and checksum from the [v1.0.1 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.1).
 - Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
 - A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
@@ -43,6 +43,16 @@ Categories are derived from the extension only, never from words such as "plan" 
 - One absolute path keeps only its latest record; identical file names in different directories stay separate and gain an extra directory line when a name would otherwise be ambiguous.
 - The list follows the session's file records and is restored from Host history after a reload; at most the latest 1000 distinct paths are kept, and the limit is reported.
 - "File index unavailable" and "no files" are different states with different copy; a missing capability is never rendered as an empty list.
+
+## Search history
+
+A short **Search** tab records this session's native search output; it is separate from delivered files and never adds a delivery:
+
+- Sources: `glob` `meta.paths`, `grep` `meta.files[].path`, `web_search` `meta.sources[]` (title + http(s) URL), a successful `web_fetch` (`meta.url` with a 2xx `statusCode`) under **Opened pages**, and the `query` argument of `session_search`/`session_event_search`.
+- Only structured metadata is stored — never grep hit lines, snippets or page bodies — and free text is never parsed back into paths.
+- Local hits open the native preview and **Show in folder**; web sources are plain http(s) links. Hits are deduplicated within one call, and relative hits resolve against the tool's `working-directory/change`; a relative hit without a known absolute working directory is omitted instead of becoming a wrong clickable path.
+- A failed call is shown as a failure and never contributes hits. Zero-hit searches are kept; Host truncation (`truncated`/`total`) and this plugin's own caps (50 searches, 100 paths and 50 sources per search) are reported as incomplete.
+- History is per session. An older Host without the projection shows "search history unavailable", and replay fills only the native events the Host still retains (checkpoint/window) — it never re-runs a search. Session queries have no structured result metadata on this Host, so only their query is recorded ("results in the session"); their results are never parsed or copied.
 
 ## Plans and delivery records
 

@@ -44,8 +44,15 @@ export function commandFor(task: ProjectTask, executor: ExecutorTool): string {
   const invocation = task.invocation
   if (!task.runnable || invocation === undefined) throw new Error('task is not runnable')
   switch (invocation.kind) {
-    case 'package':
-      return `${invocation.manager} run ${quote(invocation.script, executor)}`
+    case 'package': {
+      // The PowerShell npm/pnpm/yarn shims capture a nested Node process just
+      // to resolve their prefix; Windows' restricted token can deny that pipe.
+      // Their cmd shims run through the same Host executor and sandbox.
+      const manager = process.platform === 'win32' && executor === 'pwsh' && invocation.manager !== 'bun'
+        ? `${invocation.manager}.cmd`
+        : invocation.manager
+      return `${manager} run ${quote(invocation.script, executor)}`
+    }
     case 'make':
       return `make -- ${quote(invocation.target, executor)}`
     case 'just':

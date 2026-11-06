@@ -93,33 +93,7 @@
  * z-index sits above the right sidebar (at most 40) and below modal overlays
  * (1000), matching the official header popovers.
  */
-.po-menu {
-  position: fixed;
-  z-index: 100;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 440px;
-  max-width: min(460px, calc(100vw - 24px));
-  max-height: min(520px, calc(100vh - 140px));
-  padding: 3px;
-  overflow: hidden auto;
-  border: 0;
-  border-radius: var(--dsw-radius-lg);
-  background: var(--dsw-specific-menu);
-  backdrop-filter: var(--dsw-menu-backdrop-filter);
-  color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-family);
-  font-size: var(--dsw-font-xxs-12-font-size);
-  line-height: var(--dsw-font-xxs-12-line-height);
-  box-shadow: var(--dsw-elevation-prominent);
-  /* Soften the elevation stroke the way the official menus do, and keep the
-     shell's own scrollbar variables on the panel surface. */
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
+.po-menu { position: fixed; z-index: 100; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; width: 440px; max-width: min(460px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 140px)); padding: 8px; overflow: hidden auto; border: 0; border-radius: 10px; background: var(--dsw-specific-menu); backdrop-filter: var(--dsw-menu-backdrop-filter); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); font-size: var(--dsw-font-xxs-12-font-size); line-height: var(--dsw-font-xxs-12-line-height); box-shadow: var(--dsw-elevation-prominent); --dsw-elevation-stroke-color: var(--dsw-alias-border-l1); --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); }
 
 .po-menu:focus {
   outline: none;
@@ -131,16 +105,10 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 5px 3px 4px 8px;
+  padding: 8px 6px 10px;
 }
 
-.po-header-title {
-  flex: none;
-  color: var(--dsw-alias-label-primary);
-  font-size: var(--dsw-font-xxs-strong-12-font-size);
-  font-weight: var(--dsw-font-xxs-strong-12-font-weight);
-  line-height: var(--dsw-font-xxs-strong-12-line-height);
-}
+.po-header-title { flex: none; color: var(--dsw-alias-label-primary); font-size: 15px; font-weight: 600; line-height: 22px; }
 
 .po-header-count {
   flex: 1;

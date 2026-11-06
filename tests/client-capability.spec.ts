@@ -18,6 +18,7 @@ interface Registered {
     list: (signal: AbortSignal) => Promise<unknown>
     open: (task: string, file: 'PLAN.md' | 'READY.md') => void
     files: (signal: AbortSignal) => Promise<unknown>
+    search: (signal: AbortSignal) => Promise<unknown>
     openFile: (path: string, signal: AbortSignal) => Promise<void>
     revealFile: (path: string, signal: AbortSignal) => Promise<void>
   }
@@ -175,10 +176,52 @@ test('reads the viewed session file projection and checks the file before native
   const signal = new AbortController().signal
   await expect(face.files(signal)).resolves.toMatchObject({ files: [{ path: '/work/report.docx' }], truncated: false })
   await face.openFile('/work/report.docx', signal)
-  await expect(face.openFile('/work/missing.xlsx', signal)).rejects.toThrow('File not found')
+  // A missing entry is thrown as a classified file error, not a bare message.
+  await expect(face.openFile('/work/missing.xlsx', signal)).rejects.toMatchObject({ outcome: 'missing', message: 'File not found' })
   expect(reads).toEqual(['viewed-session', 'viewed-session:/work/report.docx', 'viewed-session:/work/missing.xlsx'])
   expect(opened).toHaveLength(1)
   expect(opened[0]).toContain('report.docx')
+})
+
+test('a preview permission refusal is denied instead of reported as missing', async () => {
+  const opened: string[] = []
+  const fixture = await clientFixture({
+    'remote.workspaceFiles': {
+      ...filesFace(),
+      stat: async (_sessionId: string, path: string) => path.endsWith('secret.docx')
+        ? { ok: false, error: { code: 'gateway/internal', message: "EPERM: operation not permitted, stat '/work/secret.docx'" } }
+        : { ok: true, value: { kind: 'file' } },
+    },
+    sidebarRight: { openResource: (address: string) => { opened.push(address) } },
+  })
+  const face = fixture.entry()!.inject('session-1')
+  await expect(face.openFile('/work/secret.docx', new AbortController().signal)).rejects.toMatchObject({ outcome: 'denied' })
+  expect(opened).toEqual([])
+})
+
+test('reads this session native search projection and reports an older Host as unavailable', async () => {
+  const fixture = await clientFixture({
+    'remote.session': { projections: async () => ({ ok: true, value: { kind: 'sequenced', asOfSeq: 1, values: {
+      missherProjectOpsSearch: {
+        searches: [{ callId: 'c1', mode: 'glob', query: '*.md', files: ['/work/a.md'], sources: [], total: 1, truncated: false, time: 2 }],
+        truncated: false,
+      },
+    } } }) },
+  })
+  const face = fixture.entry()!.inject('session-1')
+  await expect(face.search(new AbortController().signal)).resolves.toMatchObject({ searches: [{ mode: 'glob', files: ['/work/a.md'] }] })
+  const older = await clientFixture({ 'remote.session': { projections: async () => ({ ok: true, value: { kind: 'sequenced', asOfSeq: 1, values: {} } }) } })
+  await expect(older.entry()!.inject('session-1').search(new AbortController().signal)).resolves.toEqual({ searches: [], truncated: false, unavailable: true })
+})
+
+test('watchFiles subscribes to the delivered-files and search projections', async () => {
+  const subscribed: string[] = []
+  const fixture = await clientFixture({ sessions: { binding: () => ({ session: { projections: {
+    faceOf: (key: string) => ({ subscribe: () => { subscribed.push(key); return () => {} } }),
+  } } }) } })
+  const off = fixture.entry()!.inject('session-1').watchFiles(() => {})
+  expect(subscribed).toEqual(['missherProjectOpsFiles', 'missherProjectOpsSearch'])
+  off()
 })
 
 test('reveal asks the Host to show the file in Finder after checking it still exists', async () => {

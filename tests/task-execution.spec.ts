@@ -34,7 +34,9 @@ describe('task execution helpers', () => {
   test('constructs only fixed task commands with platform-correct quoting', () => {
     expect(commandFor(packageTask(), 'bash')).toBe("pnpm run 'build:site'")
     expect(commandFor(packageTask("quote's"), 'bash')).toBe("pnpm run 'quote'\\''s'")
-    expect(commandFor(packageTask("quote's"), 'pwsh')).toBe("pnpm run 'quote''s'")
+    expect(commandFor(packageTask("quote's"), 'pwsh')).toBe(
+      process.platform === 'win32' ? "pnpm.cmd run 'quote''s'" : "pnpm run 'quote''s'",
+    )
     expect(commandFor({ ...packageTask('x'), invocation: { kind: 'make', target: 'build' } }, 'bash')).toBe("make -- 'build'")
     expect(commandFor({ ...packageTask('x'), invocation: { kind: 'just', recipe: 'check' } }, 'pwsh')).toBe("just -- 'check'")
   })

@@ -156,7 +156,8 @@ const bundlePath = join(root, 'lib/browser/client.js')
 const bundle = readFileSync(bundlePath, 'utf8')
 const id = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name
 const required = [...new Set([...bundle.matchAll(/require\("([^"]+)"\)/gu)].map(match => match[1]))].sort()
-const cssProbe = '--dsw-radius-lg'
+// Probe the owned menu rule rather than a radius token that a visual update may replace.
+const cssProbe = '.po-menu {'
 const report = {
   passed: false,
   projectRoot,

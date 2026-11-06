@@ -185,7 +185,7 @@ test('the panel reports loading, empty, error and truncated states distinctly', 
   expect(withClass(truncated, styles.row).length).toBe(1)
 })
 
-test('the panel exposes its title, refresh and close actions and a read-only hint', () => {
+test('the panel exposes its title, refresh and close actions', () => {
   const tree = ProjectOpsPanel({
     t, open: true, position: { left: 10, top: 20 }, measureStyle: {}, panelRef: { current: null },
     result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
@@ -202,8 +202,6 @@ test('the panel exposes its title, refresh and close actions and a read-only hin
   const labels = panel.map(element => (element.props as { 'aria-label'?: string })['aria-label']).filter(Boolean)
   expect(labels).toContain('刷新')
   expect(labels).toContain('关闭')
-  expect(withClass(tree, styles.footer).length).toBe(1)
-  expect(text(tree)).toContain('会话文件 · 项目方案')
   expect(text(tree)).toContain('1 项')
 })
 
@@ -363,4 +361,120 @@ test('two rows with one file name add a directory line only where names collide'
   expect(rendered).toContain('/work/b')
   // The unique name keeps no directory line at all.
   expect(rendered).not.toContain('/work/c')
+})
+
+test('a background refresh keeps the last file rows instead of replacing them with a spinner', () => {
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: true, availability: AVAILABLE,
+    files: { files: [{ path: '/work/预算-分类测试.xlsx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {},
+  }
+  const busy = ProjectOpsPanel({ ...base, fileBusy: true })
+  // The row stays mounted while the read runs, so its DOM node (and focus) is kept.
+  expect(text(busy)).toContain('预算-分类测试.xlsx')
+  expect(text(busy)).not.toContain('加载中…')
+  const failed = ProjectOpsPanel({ ...base, busy: false, fileBusy: false, fileError: 'offline' })
+  // A failed background read keeps the rows and adds the reason beside them.
+  expect(text(failed)).toContain('预算-分类测试.xlsx')
+  expect(text(failed)).toContain('读取失败：offline')
+  const first = ProjectOpsPanel({ ...base, busy: false, files: undefined, fileBusy: true })
+  expect(text(first)).toContain('加载中…')
+})
+
+test('a preview refusal explains missing and permission separately, keeping other detail', () => {
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
+  }
+  const missing = ProjectOpsPanel({ ...base, openError: { path: '/work/方案-分类测试.docx', outcome: 'missing', message: 'no entry' } })
+  expect(text(missing)).toContain('文件已移动或删除')
+  expect(text(missing)).not.toContain('no entry')
+  const denied = ProjectOpsPanel({ ...base, openError: { path: '/work/方案-分类测试.docx', outcome: 'denied', message: 'EACCES' } })
+  expect(text(denied)).toContain('没有访问该文件的权限')
+  expect(text(denied)).not.toContain('文件已移动或删除')
+  const failed = ProjectOpsPanel({ ...base, openError: { path: '/work/方案-分类测试.docx', outcome: 'failed', message: 'I/O error' } })
+  expect(text(failed)).toContain('无法打开：I/O error')
+})
+
+test('a reveal permission refusal uses the localized permission sentence', () => {
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
+  }
+  const denied = ProjectOpsPanel({ ...base, revealError: { path: '/work/方案-分类测试.docx', outcome: 'denied', message: 'EACCES' } })
+  expect(text(denied)).toContain('没有访问该文件的权限')
+  expect(text(denied)).not.toContain('文件已移动或删除')
+})
+
+test('the search tab lists every local hit, web source and opened page beside truncated totals', () => {
+  const opened: string[] = []
+  const revealed: string[] = []
+  const base = {
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
+    files: { files: [{ path: '/work/delivered.docx', updatedAt: 1 }], truncated: false },
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
+    onOpenFile: (path: string) => { opened.push(path) },
+    onRevealFile: (path: string) => { revealed.push(path) },
+  }
+  const tree = ProjectOpsPanel({ ...base, category: 'search', searches: { truncated: true, searches: [
+    { callId: 'g1', mode: 'glob', query: 'README*.md', files: ['/a/README.md', '/b/README.md'], sources: [], total: 2, truncated: false, time: 1 },
+    { callId: 'w1', mode: 'web_search', query: 'dsh docs', files: [], sources: [{ title: 'DSH docs', url: 'https://example.com/docs' }], total: 1, truncated: false, time: 2 },
+    { callId: 'f1', mode: 'web_fetch', query: 'https://example.com/ok', files: [], sources: [], opened: 'https://example.com/ok', total: 1, truncated: false, time: 3 },
+    { callId: 'e1', mode: 'grep', query: 'boom', files: [], sources: [], total: 0, truncated: false, error: 'tool exploded', time: 4 },
+    { callId: 'z1', mode: 'grep', query: 'nothing', files: [], sources: [], total: 0, truncated: false, time: 5 },
+    { callId: 'u1', mode: 'glob', query: 'unresolved', files: [], sources: [], total: 1, truncated: true, time: 6 },
+    { callId: 'wf', mode: 'web_fetch', query: 'https://example.com/broken', files: [], sources: [], total: 0, truncated: false, error: 'fetch failed', time: 7 },
+  ] } })
+  // On the search tab the delivered-file rows stay out of the way.
+  expect(text(tree)).not.toContain('delivered.docx')
+  expect(text(tree)).toContain('README*.md')
+  // Two identical names stay distinguishable by their directories.
+  expect(text(tree)).toContain('/a')
+  expect(text(tree)).toContain('/b')
+  const hits = buttons(tree).filter(button => String(button.props.title ?? '').endsWith('README.md'))
+  expect(hits).toHaveLength(2)
+  hits[0]!.props.onClick()
+  expect(opened).toEqual(['/a/README.md'])
+  const reveal = buttons(tree).find(button => button.props.title === '打开位置')
+  reveal!.props.onClick()
+  expect(revealed).toEqual(['/a/README.md'])
+  const links = elements(tree).filter(element => element.type === 'a')
+  expect(links.map(link => link.props.href)).toEqual(['https://example.com/docs', 'https://example.com/ok'])
+  expect(text(tree)).toContain('已打开网页')
+  expect(text(tree)).toContain('搜索失败：tool exploded')
+  expect(text(tree)).toContain('无命中')
+  expect(text(tree)).toContain('结果不完整（共 1 条）')
+  // A failed fetch stays a failed search, not an opened page.
+  expect(text(tree)).toContain('搜索失败：fetch failed')
+  expect(text(tree)).toContain('仅显示最近 50 次搜索')
+})
+
+test('the search tab reports an unavailable history instead of an empty list', () => {
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: undefined, error: undefined, busy: false, availability: AVAILABLE,
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
+    category: 'search', searches: { searches: [], truncated: false, unavailable: true },
+  })
+  expect(text(tree)).toContain('此宿主无搜索记录')
+})
+
+test('a session query row shows the query and its in-session result label, never zero hits', () => {
+  const tree = ProjectOpsPanel({
+    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    result: undefined, error: undefined, busy: false, availability: AVAILABLE,
+    onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
+    category: 'search', searches: { truncated: false, searches: [
+      { callId: 's1', mode: 'session_search', query: 'project ops', files: [], sources: [], total: 0, truncated: false, time: 1 },
+    ] },
+  })
+  expect(text(tree)).toContain('project ops')
+  expect(text(tree)).toContain('结果见会话')
+  expect(text(tree)).not.toContain('无命中')
 })

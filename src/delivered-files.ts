@@ -13,7 +13,7 @@ export interface FilesResult extends DeliveredFiles { unavailable?: boolean }
 
 export const FILE_CATEGORIES = ['word', 'excel', 'slides', 'pdf', 'image', 'media', 'other'] as const
 export type FileCategory = typeof FILE_CATEGORIES[number]
-export type PanelCategory = 'all' | 'plans' | FileCategory
+export type PanelCategory = 'all' | 'plans' | 'search' | FileCategory
 
 /** Classify the actual format, never words such as “方案” in a filename. */
 export function fileCategory(path: string): FileCategory {

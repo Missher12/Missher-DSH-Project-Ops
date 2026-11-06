@@ -24,7 +24,7 @@ describe('Bundle package', () => {
       peerDependencies: Record<string, string>
       peerDependenciesMeta: Record<string, { optional?: boolean }>
     }
-    expect(manifest.version).toBe('1.0.0')
+    expect(manifest.version).toBe('1.0.1')
     // The published range must name the tested release lines, not a wildcard:
     // inclusion against the two real Hosts is proven by scripts/check-peer-ranges.mjs.
     const hostRange = manifest.peerDependencies['@deepseek-ai/dsh-jobs']!
