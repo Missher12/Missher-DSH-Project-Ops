@@ -10,8 +10,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = mkdtempSync(join(tmpdir(), 'project-ops-clean-'))
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 function run(command, args, cwd, env = process.env) {
-  const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 240000, maxBuffer: 8 * 1024 * 1024, shell: command === 'npm.cmd' })
-  if (result.error || result.status !== 0) throw new Error(`${command} failed: ${result.error?.message ?? result.stderr ?? result.stdout}`)
+  const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  const windowsNpm = command === 'npm.cmd'
+  if (windowsNpm && !existsSync(npmCli)) throw new Error('selected Windows Node has no bundled npm CLI')
+  const result = spawnSync(windowsNpm ? process.execPath : command, windowsNpm ? [npmCli, ...args] : args, {
+    cwd, env, encoding: 'utf8', timeout: windowsNpm && args[0] === 'install' ? 600000 : 240000,
+    maxBuffer: 8 * 1024 * 1024, shell: false,
+  })
+  if (result.error || result.status !== 0) {
+    throw new Error(`${command} failed (${result.error?.code ?? result.status}): ${result.error?.message ?? ''}\n${result.stderr ?? ''}\n${result.stdout ?? ''}`)
+  }
   return result.stdout
 }
 /** Keep the verified name usable as an install argument before it is printed. */
@@ -23,6 +31,7 @@ const init = name => {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
   return dir
 }
+let passed = false
 try {
   const pack = init('pack')
   const packed = JSON.parse(run(npm, ['pack', '--json', '--pack-destination', pack], root))
@@ -60,6 +69,12 @@ try {
   process.stdout.write(run(process.execPath, [join(root, 'scripts/smoke.mjs')], root, { ...process.env, PROJECT_OPS_HOST_ROOT: harness }))
   assertPackageName(packageName)
   console.log(`clean-runtime: PASS ${process.platform}/${process.arch}, Node ${process.version}; ${packageName} installs and removes in isolation`)
+  passed = true
 } finally {
-  rmSync(temporary, { recursive: true, force: true })
+  try {
+    rmSync(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch (error) {
+    if (passed) throw error
+    console.error(`clean-install cleanup: ${error.message}`)
+  }
 }
