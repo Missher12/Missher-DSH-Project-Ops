@@ -6,7 +6,7 @@ Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It pu
 
 ## Current state
 
-- Current version: **1.0.1**. Download the matching package and checksum from the [v1.0.1 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.1).
+- Current version: **1.0.2**. Download the matching package and checksum from the [v1.0.2 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.2).
 - Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
 - A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
