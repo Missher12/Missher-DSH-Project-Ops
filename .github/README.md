@@ -2,7 +2,7 @@
 
 <h1>Project Ops · 项目与文件</h1>
 
-<p><img src="../docs/images/overview.svg" alt="Project Ops 功能示意" width="100%"></p>
+<p><img src="images/overview.svg" alt="Project Ops 功能示意" width="100%"></p>
 
 <p>在会话旁查看项目方案、交付文件与搜索记录。</p>
 
