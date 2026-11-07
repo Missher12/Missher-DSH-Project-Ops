@@ -2,6 +2,8 @@
 
 <h1>Project Ops · 项目与文件</h1>
 
+<p><img src="../docs/images/overview.svg" alt="Project Ops 功能示意" width="100%"></p>
+
 <p>在会话旁查看项目方案、交付文件与搜索记录。</p>
 
 <p>
@@ -16,6 +18,10 @@
 
 ---
 
+<!-- current-source -->
+当前开发源码：**1.0.1** · [分支 `main`](https://github.com/Missher12/Missher-DSH-Project-Ops/tree/main)。安装包以实际 Release 为准。
+<!-- /current-source -->
+
 ## 功能一览
 
 | 能做什么 | 说明 |
@@ -24,6 +30,14 @@
 | **原生预览** | 点击文件名，在 DSH 右侧栏中打开可用预览。 |
 | **打开文件位置** | 在访达中定位实际文件，便于复制或拖放交付。 |
 | **项目方案与搜索** | 查看项目方案、交付记录及本会话保留的搜索结果。 |
+
+<!-- existing-screenshots -->
+## 界面示例
+
+<table><tr><td><a href="../docs/images/task-panel-0.4.0.jpg"><img src="../docs/images/task-panel-0.4.0.jpg" alt="Project Ops task panel (0.4.0 historical screenshot)" width="100%"></a></td><td><a href="../docs/images/plan-preview-0.4.0.jpg"><img src="../docs/images/plan-preview-0.4.0.jpg" alt="PLAN.md opened by the Plan entry (0.4.0 historical screenshot)" width="100%"></a></td></tr></table>
+
+<sub>来自项目已有文档；截图版本与验证范围见<a href="../README.md">原始说明</a>，点击可放大。</sub>
+<!-- /existing-screenshots -->
 
 ## 快速开始
 
