@@ -1,6 +1,6 @@
 {
   "name": "@missher/dsh-project-ops",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "会话文件分类与项目方案",
   "private": false,
   "type": "module",
