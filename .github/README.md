@@ -12,7 +12,7 @@
   <a href="https://github.com/Missher12/Missher-DSH-Project-Ops/blob/main/LICENSE"><img src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF-MIT-6B7280?style=flat-square" alt="许可: MIT"></a>
 </p>
 
-<p><a href="#功能一览">功能一览</a> · <a href="#快速开始">快速开始</a> · <a href="#使用场景">使用场景</a> · <a href="#常见问题">常见问题</a> · <a href="#详细文档">详细文档</a> · <a href="../README.md">English</a></p>
+<p><a href="#功能一览">功能一览</a> · <a href="#快速开始">快速开始</a> · <a href="#visual-guide">图解使用</a> · <a href="#使用场景">使用场景</a> · <a href="#常见问题">常见问题</a> · <a href="#详细文档">详细文档</a> · <a href="../README.md">English</a></p>
 
 </div>
 
@@ -31,25 +31,63 @@
 | **打开文件位置** | 在访达中定位实际文件，便于复制或拖放交付。 |
 | **项目方案与搜索** | 查看项目方案、交付记录及本会话保留的搜索结果。 |
 
-<!-- existing-screenshots -->
-## 界面示例
-
-<table><tr><td><a href="../docs/images/task-panel-0.4.0.jpg"><img src="../docs/images/task-panel-0.4.0.jpg" alt="Project Ops task panel (0.4.0 historical screenshot)" width="100%"></a></td><td><a href="../docs/images/plan-preview-0.4.0.jpg"><img src="../docs/images/plan-preview-0.4.0.jpg" alt="PLAN.md opened by the Plan entry (0.4.0 historical screenshot)" width="100%"></a></td></tr></table>
-
-<sub>来自项目已有文档；截图版本与验证范围见<a href="../README.md">原始说明</a>，点击可放大。</sub>
-<!-- /existing-screenshots -->
-
 ## 快速开始
 
 1. 从 [Releases](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.3) 下载对应版本的 `.tgz` 安装包。
 2. 在 DSH **插件 → 添加插件** 中选择下载的文件，安装并启用；按宿主提示重新加载或正常重启。
 3. 打开会话标题栏的 **Project Ops / 项目方案与文件**，按分类浏览。
 
+<!-- visual-guide -->
+<a id="visual-guide"></a>
+
+## 图解使用流程
+
+围绕当前项目找文件、看内容，最后定位真正的交付物。
+
+![Project Ops：四步使用流程](../docs/images/workflow-guide.svg)
+
+[查看完整流程图](../docs/images/workflow-guide.svg)
+
+| 步骤 | 怎样操作 | 需要留意 |
+| --- | --- | --- |
+| 1. 确认范围 | 在当前项目与会话中查看已登记的文件和产物。 | 面板以当前会话已登记文件为范围，其他文件先通过既有文件工具定位。 |
+| 2. 找目标文件 | 通过文件名与实际扩展名分类定位内容。 | 名称相似时核对路径，不能用展示标题替代真实文件名。 |
+| 3. 预览与搜索 | 点击文件名打开 DSH 右侧预览，查看项目方案和保留的搜索结果。 | 预览用于确认内容；是否能打开某种文件还取决于宿主能力。 |
+| 4. 找到交付位置 | 需要继续使用时显示真实文件位置或打开所在目录。 | 交付时给出实际文件路径，未生成的文件不能只凭列表名称算完成。 |
+
+### 试一次
+
+> 找出当前项目本轮生成的方案和交付文件。先在右侧预览确认内容，再打开文件所在目录，列出可直接使用的实际路径。
+
+使用后可以这样核对：
+
+- 文件来自预期项目与当前会话范围。
+- 右侧预览与实际磁盘文件对应。
+- 已完成的交付物和仍未生成的文件分开说明。
+
+### 使用与配置
+
+| 项目 | 建议 |
+| --- | --- |
+| 项目范围 | 先确认工作目录和会话，避免把其他项目的结果当成本轮产物。 |
+| 预览入口 | 点文件名查看正文；长文件与特殊格式沿用宿主预览能力。 |
+| 路径与定位 | 展示真实路径，系统定位操作需要宿主相应能力。 |
+
+<!-- existing-screenshots -->
+### 界面示例
+
+<table><tr><td><a href="../docs/images/task-panel-0.4.0.jpg"><img src="../docs/images/task-panel-0.4.0.jpg" alt="Project Ops task panel (0.4.0 historical screenshot)" width="100%"></a></td><td><a href="../docs/images/plan-preview-0.4.0.jpg"><img src="../docs/images/plan-preview-0.4.0.jpg" alt="PLAN.md opened by the Plan entry (0.4.0 historical screenshot)" width="100%"></a></td></tr></table>
+
+<sub>来自项目已有文档；截图版本与验证范围见<a href="../README.md">原始说明</a>，点击可放大。</sub>
+<!-- /existing-screenshots -->
+
+两张图片是项目已有 0.4.0 界面：分别说明任务与文件入口、方案预览。用于理解工作路径，不把历史样式标作当前新截图。
+<!-- /visual-guide -->
+
 ## 使用前了解
 
 - 文件预览和定位使用宿主提供的能力；已移动或删除的文件会保留历史条目并给出提示。
 - 交付记录与当前方案关联，不代表已经发布、安装或通过完整验收。
-
 
 <!-- readme-expansion -->
 ## 使用场景
@@ -59,16 +97,6 @@
 | 想找到这轮对话实际生成或修改过的文件 | 按会话文件记录汇总，并按真实扩展名分类。 |
 | 文档完成后要预览，再把实际文件交给别人 | 点击文件名打开宿主预览，在支持的桌面环境中定位文件，再复制或拖放。 |
 | 项目较长，需要回看方案、交付记录和搜索线索 | 在同一面板查看计划文档与独立的会话搜索历史。 |
-
-## 第一次使用
-
-1. 在一个已有文件记录的会话中，点击会话顶部的 Project Ops。
-2. 用 Word、Excel、PDF、图片等分类筛选，点击文件名查看原生预览。
-3. 需要交付时使用“打开文件位置”；查找之前用过的资料时切到搜索或方案区域。
-
-### 一个具体例子
-
-例如，让 Agent 完成一份表格并通过宿主文件工具登记后，先在面板预览结果，再在文件管理器中复制实际文件。只在回答里写出一个文件名，并不等于文件已经生成并登记。
 
 ## 常见问题
 
