@@ -1,5 +1,7 @@
 # Project Ops
 
+![Project Ops · 项目工作区（品牌插画）](docs/images/cover-v2.png)
+
 Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It puts one entry in the session header: browse the files this conversation registered next to the project's development plans, open a file in the Host's native right-sidebar preview, or reveal it in Finder and hand the actual file to someone by copy or drag-and-drop.
 
 [Desktop app](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [Install](INSTALL.md) · [Task documents](docs/TASK_DOCUMENTS.md)

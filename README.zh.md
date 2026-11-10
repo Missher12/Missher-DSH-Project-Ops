@@ -1,5 +1,7 @@
 # Project Ops
 
+![Project Ops · 项目工作区（品牌插画）](docs/images/cover-v2.png)
+
 Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。它在会话标题栏放一个入口：按分类查看当前会话已登记的实际文件和当前项目的开发方案；文件用宿主原生右侧预览打开，也可以在访达（Finder）中定位后复制或拖到聊天里发给别人。
 
 [桌面端](https://github.com/Missher12/Missher-DeepseekHarness-Desktop) · [安装说明](INSTALL.md) · [开发任务文档](docs/TASK_DOCUMENTS.md)
