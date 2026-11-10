@@ -44,9 +44,9 @@
 
 围绕当前项目找文件、看内容，最后定位真正的交付物。
 
-![Project Ops：四步使用流程](../docs/images/workflow-guide.svg)
+![Project Ops：四步使用流程](images/workflow-guide.svg)
 
-[查看完整流程图](../docs/images/workflow-guide.svg)
+[查看完整流程图](images/workflow-guide.svg)
 
 | 步骤 | 怎样操作 | 需要留意 |
 | --- | --- | --- |
