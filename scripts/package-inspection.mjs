@@ -31,7 +31,6 @@ const PLATFORM_STUBS = new Map([
       IconDeliverDocRegular: icon,
       IconInspectOutlineRegular: icon,
       IconRefreshOutlineRegular: icon,
-      useAnchoredPosition: () => null,
       useDismissOnOutsidePointer: () => {},
     }
   }],

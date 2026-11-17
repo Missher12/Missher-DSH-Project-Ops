@@ -166,7 +166,7 @@ test('the trigger is a plain labelled button, not a browser default face', () =>
 })
 
 test('the panel reports loading, empty, error and truncated states distinctly', () => {
-  const base = { t, open: true, position: null, measureStyle: {}, panelRef: { current: null }, busy: false, availability: AVAILABLE, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
+  const base = { t, open: true, panelRef: { current: null }, busy: false, availability: AVAILABLE, onRefresh: () => {}, onClose: () => {}, onOpen: () => {} }
   const loading = ProjectOpsPanel({ ...base, result: undefined, error: undefined })
   expect(String((withClass(loading, styles.skeleton)[0]!.props as { role?: string }).role)).toBe('status')
   expect(elements(loading).some(element => (element.props as { 'aria-label'?: string })['aria-label'] === '加载中…')).toBe(true)
@@ -187,7 +187,7 @@ test('the panel reports loading, empty, error and truncated states distinctly', 
 
 test('the panel exposes its title, refresh and close actions', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: { left: 10, top: 20 }, measureStyle: {}, panelRef: { current: null },
+    t, open: true, anchorName: '--po-anchor-test', panelRef: { current: null },
     result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })
@@ -198,7 +198,7 @@ test('the panel exposes its title, refresh and close actions', () => {
   expect(props.role).toBe('dialog')
   expect(props['aria-label']).toBe('Project Ops')
   expect(props['aria-busy']).toBe(false)
-  expect(props.style).toEqual({ left: 10, top: 20 })
+  expect(props.style).toEqual({ '--po-anchor-name': '--po-anchor-test' })
   const labels = panel.map(element => (element.props as { 'aria-label'?: string })['aria-label']).filter(Boolean)
   expect(labels).toContain('刷新')
   expect(labels).toContain('关闭')
@@ -207,7 +207,7 @@ test('the panel exposes its title, refresh and close actions', () => {
 
 test('a closed panel renders nothing at all', () => {
   expect(ProjectOpsPanel({
-    t, open: false, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: false, panelRef: { current: null },
     result: { tasks: [task()], truncated: false }, error: undefined, busy: true, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })).toBeNull()
@@ -215,7 +215,7 @@ test('a closed panel renders nothing at all', () => {
 
 test('a Host without the workspace-files remote explains itself instead of showing an empty project', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: undefined, error: undefined, busy: false, availability: { list: false, preview: true },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
   })
@@ -251,7 +251,7 @@ test('the English dictionary renders the same four states', () => {
 
 test('file categories are independent of plans and keep a Word proposal in Word', () => {
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [task()], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
     files: { files: [
@@ -274,7 +274,7 @@ test('file categories are independent of plans and keep a Word proposal in Word'
 test('actual files remain usable when the project has no managed plans', () => {
   const opened: string[] = []
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/out/report.pdf', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: path => { opened.push(path) },
@@ -289,7 +289,7 @@ test('a delivered file keeps its native preview and adds a separate open-locatio
   const opened: string[] = []
   const revealed: string[] = []
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {},
@@ -311,7 +311,7 @@ test('a delivered file keeps its native preview and adds a separate open-locatio
 
 test('a reveal refusal explains itself inside the panel instead of hiding the file', () => {
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
@@ -329,7 +329,7 @@ test('a reveal refusal explains itself inside the panel instead of hiding the fi
 
 test('a file row keeps only its name and action, moving path and note into the tooltip', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/out/report.docx', description: '初稿', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
@@ -347,7 +347,7 @@ test('a file row keeps only its name and action, moving path and note into the t
 
 test('two rows with one file name add a directory line only where names collide', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [
       { path: '/work/a/report.docx', updatedAt: 1 },
@@ -365,7 +365,7 @@ test('two rows with one file name add a directory line only where names collide'
 
 test('a background refresh keeps the last file rows instead of replacing them with a spinner', () => {
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: true, availability: AVAILABLE,
     files: { files: [{ path: '/work/预算-分类测试.xlsx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {},
@@ -384,7 +384,7 @@ test('a background refresh keeps the last file rows instead of replacing them wi
 
 test('a preview refusal explains missing and permission separately, keeping other detail', () => {
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
@@ -401,7 +401,7 @@ test('a preview refusal explains missing and permission separately, keeping othe
 
 test('a reveal permission refusal uses the localized permission sentence', () => {
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/方案-分类测试.docx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onOpenFile: () => {}, onRevealFile: () => {},
@@ -415,7 +415,7 @@ test('the search tab lists every local hit, web source and opened page beside tr
   const opened: string[] = []
   const revealed: string[] = []
   const base = {
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: { tasks: [], truncated: false }, error: undefined, busy: false, availability: AVAILABLE,
     files: { files: [{ path: '/work/delivered.docx', updatedAt: 1 }], truncated: false },
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
@@ -457,7 +457,7 @@ test('the search tab lists every local hit, web source and opened page beside tr
 
 test('the search tab reports an unavailable history instead of an empty list', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: undefined, error: undefined, busy: false, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
     category: 'search', searches: { searches: [], truncated: false, unavailable: true },
@@ -467,7 +467,7 @@ test('the search tab reports an unavailable history instead of an empty list', (
 
 test('a session query row shows the query and its in-session result label, never zero hits', () => {
   const tree = ProjectOpsPanel({
-    t, open: true, position: null, measureStyle: {}, panelRef: { current: null },
+    t, open: true, panelRef: { current: null },
     result: undefined, error: undefined, busy: false, availability: AVAILABLE,
     onRefresh: () => {}, onClose: () => {}, onOpen: () => {}, onCategory: () => {},
     category: 'search', searches: { truncated: false, searches: [

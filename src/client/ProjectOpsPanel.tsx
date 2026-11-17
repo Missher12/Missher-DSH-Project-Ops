@@ -144,10 +144,8 @@ export function ProjectOpsRow({ t, task, preview, onOpen }: RowProps): ReactElem
 export interface PanelProps {
   t: PanelTranslate
   open: boolean
-  /** Fixed placement from the shared anchored-position hook; `null` before measurement. */
-  position: CSSProperties | null
-  /** Hidden-but-laid-out placement used for the first measurement. */
-  measureStyle: CSSProperties
+  /** Unique CSS anchor name shared with the trigger. */
+  anchorName?: string | undefined
   panelRef: RefObject<HTMLElement>
   /** Read result, absent until the first read settles. */
   result: TaskListResult | undefined
@@ -399,7 +397,7 @@ function SearchHistoryView(props: PanelProps): ReactElement | null {
  * @returns the portaled panel, or `null` while closed.
  */
 export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
-  const { t, open, position, measureStyle, panelRef, result, error, busy, availability, onRefresh, onClose, onOpen } = props
+  const { t, open, anchorName, panelRef, result, error, busy, availability, onRefresh, onClose, onOpen } = props
   if (!open) return null
   const preview = { available: availability.preview, reason: availability.previewReason ?? t('unavailable.preview') }
   const category = props.category ?? 'all'
@@ -411,7 +409,7 @@ export function ProjectOpsPanel(props: PanelProps): ReactElement | null {
     <section
       ref={panelRef}
       className={styles.menu}
-      style={position ?? measureStyle}
+      style={anchorName === undefined ? undefined : ({ '--po-anchor-name': anchorName } as CSSProperties)}
       role="dialog"
       aria-label={t('title')}
       tabIndex={-1}

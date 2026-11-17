@@ -36,7 +36,7 @@ declare module 'react-dom' {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-primitives' {
-  import type { CSSProperties, ReactElement, RefObject } from 'react'
+  import type { ReactElement, RefObject } from 'react'
 
   /** Shared props for every product icon component. */
   export interface IconProps {
@@ -56,20 +56,6 @@ declare module '@deepseek-ai/dsh-client-ui-primitives' {
     className?: string | undefined
     appearance?: 'dot' | 'step'
   }): ReactElement
-
-  /** Inputs for {@link useAnchoredPosition}. */
-  export interface AnchoredPositionOptions {
-    open: boolean
-    anchorRef: RefObject<HTMLElement | null>
-    panelRef: RefObject<HTMLElement | null>
-    side?: 'top' | 'bottom'
-    align?: 'start' | 'end'
-    gap: number
-    margin: number
-  }
-
-  /** Track an anchor and return the portaled panel's fixed coordinates, or `null` before the first measurement. */
-  export function useAnchoredPosition(options: AnchoredPositionOptions): CSSProperties | null
 
   /** Dismiss a floating surface on a pointer press outside the anchor and the portal. */
   export function useDismissOnOutsidePointer(

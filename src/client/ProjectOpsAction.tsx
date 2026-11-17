@@ -2,15 +2,15 @@
  * Stateful half of the Project Ops header action.
  *
  * Owns what the presentational tree must not: the bounded read of the session
- * workspace, opening and dismissal, viewport placement of the portaled panel,
- * and keyboard traversal between the trigger and the panel. The panel is
- * portaled to the document body because the session header is a clipping column
- * that the right sidebar borders or overlaps, so an in-place popover is cut off
- * or covered there.
+ * workspace, opening and dismissal, and keyboard traversal between the trigger
+ * and the panel. The panel is portaled to the document body because the session
+ * header is a clipping column that the right sidebar borders or overlaps, so an
+ * in-place popover is cut off or covered there; CSS anchor positioning follows
+ * the trigger without a JavaScript geometry hook.
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -47,15 +47,6 @@ export interface Face {
 
 /** Full props of the session-header action. */
 export type ProjectOpsActionProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'projectOps'> & Face
-
-/** Minimum gap kept between the panel and the viewport edges. */
-const VIEWPORT_MARGIN = 12
-
-/** Distance between the trigger's bottom edge and the panel. */
-const MENU_GAP = 5
-
-/** Unplaced panel: hidden but laid out, so the first placement measures real dimensions. */
-const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 /** Keyboard-reachable controls inside the panel, in document order. */
 const FOCUSABLE = 'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
@@ -101,6 +92,10 @@ export function ProjectOpsAction({ t, surface, list, open, files, search, watchF
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLElement>(null)
+  // Unique dashed-ident per mounted action; the trigger carries it as its
+  // `anchor-name` and the portaled panel as its `position-anchor`.
+  const anchorName = `--po-anchor-${useId().replace(/[^A-Za-z0-9_-]/gu, '')}`
+  const anchorStyle = { '--po-anchor-name': anchorName } as CSSProperties
 
   // One read per open/refresh/session: the effect's cleanup aborts the previous
   // request, so a refresh can never race its predecessor into the panel. The
@@ -178,9 +173,6 @@ export function ProjectOpsAction({ t, surface, list, open, files, search, watchF
     }
   }, [expanded, sessionId])
 
-  const position = useAnchoredPosition({
-    open: expanded, anchorRef: rootRef, panelRef, gap: MENU_GAP, margin: VIEWPORT_MARGIN,
-  })
   useDismissOnOutsidePointer(rootRef, expanded, setExpanded, panelRef)
 
   // Every close path returns focus to the trigger: the panel holds the focus
@@ -259,7 +251,7 @@ export function ProjectOpsAction({ t, surface, list, open, files, search, watchF
   }
 
   return (
-    <div ref={rootRef} onKeyDown={onKeyDown} className={styles.root}>
+    <div ref={rootRef} onKeyDown={onKeyDown} className={styles.root} style={anchorStyle}>
       <ProjectOpsTrigger
         t={t}
         open={expanded}
@@ -272,8 +264,7 @@ export function ProjectOpsAction({ t, surface, list, open, files, search, watchF
           <ProjectOpsPanel
             t={t}
             open
-            position={position}
-            measureStyle={MEASURE_STYLE}
+            anchorName={anchorName}
             panelRef={panelRef}
             result={result}
             error={error}

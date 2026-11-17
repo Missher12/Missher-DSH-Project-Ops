@@ -26,6 +26,16 @@ test('the sheet and the components agree on every class', () => {
   expect([...declared].filter(name => !bound.has(name))).toEqual([])
 })
 
+test('the panel is placed by CSS anchor positioning, not the removed geometry hook', () => {
+  // DSH 0.2.2 removed `useAnchoredPosition` from the primitives row; the
+  // trigger/panel pair must use the replacement CSS API instead.
+  expect(sheet).toMatch(/\.po-trigger\s*\{[^}]*anchor-name:\s*var\(--po-anchor-name\)/u)
+  expect(sheet).toMatch(/\.po-menu\s*\{[^}]*position-anchor:\s*var\(--po-anchor-name\)/u)
+  expect(sheet).toContain('position-try-fallbacks')
+  const action = readFileSync(fileURLToPath(new URL('../src/client/ProjectOpsAction.tsx', import.meta.url)), 'utf8')
+  expect(action).not.toContain('useAnchoredPosition')
+})
+
 test('the sheet declares no color of its own, so both themes follow the Host', () => {
   expect(sheet).not.toMatch(/#[0-9a-f]{3,8}\b/iu)
   expect(sheet).not.toMatch(/\b(?:rgb|hsl|oklch|color)\(/u)

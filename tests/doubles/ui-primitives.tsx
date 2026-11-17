@@ -34,10 +34,5 @@ export function StateDot({ state, size, className }: { state: StateDotState, siz
   return createElement('span', { className, 'data-state': state, 'data-size': String(size ?? 10) })
 }
 
-/** The real hook measures DOM geometry; a unit test only needs a stable style. */
-export function useAnchoredPosition(): { left: number, top: number } | null {
-  return null
-}
-
 /** Dismissal is a DOM listener in the real hook; nothing to do without a DOM. */
 export function useDismissOnOutsidePointer(): void {}

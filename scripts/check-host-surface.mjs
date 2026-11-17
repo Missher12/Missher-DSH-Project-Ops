@@ -49,7 +49,7 @@ const CLIENT_SERVICES = {
 
 /** Names the client bundle imports from the platform module table. */
 const PRIMITIVE_EXPORTS = [
-  'StateDot', 'useAnchoredPosition', 'useDismissOnOutsidePointer',
+  'StateDot', 'useDismissOnOutsidePointer',
   'IconArchiveOutlineRegular', 'IconChecklistOutlineRegular', 'IconChevronDownOutlineRegular',
   'IconCloseOutlineRegular', 'IconDeliverDocRegular', 'IconInspectOutlineRegular', 'IconRefreshOutlineRegular',
 ]
