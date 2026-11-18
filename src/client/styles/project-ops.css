@@ -91,12 +91,17 @@
 /*
  * Panel: portaled to the document body and placed by CSS anchor positioning
  * against the trigger's `anchor-name`, so no JavaScript geometry hook is needed.
- * Try fallbacks flip the panel above the trigger or to its other inline side
- * when the layout viewport would clip it. The z-index sits above the right
- * sidebar (at most 40) and below modal overlays (1000), matching the official
- * header popovers.
+ * Flip when there is room on the other side of the trigger. When neither
+ * side fits, put the whole panel inside the viewport while keeping it below
+ * the trigger. The z-index sits above the right sidebar (at most 40) and
+ * below modal overlays (1000), matching the official header popovers.
  */
-.po-menu { position: fixed; position-anchor: var(--po-anchor-name); top: calc(anchor(bottom) + 5px); left: anchor(left); right: auto; position-try-fallbacks: flip-inline, flip-block; z-index: 100; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; width: 440px; max-width: min(460px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 140px)); padding: 8px; overflow: hidden auto; border: 0; border-radius: 10px; background: var(--dsw-specific-menu); backdrop-filter: var(--dsw-menu-backdrop-filter); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); font-size: var(--dsw-font-xxs-12-font-size); line-height: var(--dsw-font-xxs-12-line-height); box-shadow: var(--dsw-elevation-prominent); --dsw-elevation-stroke-color: var(--dsw-alias-border-l1); --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); }
+.po-menu { position: fixed; position-anchor: var(--po-anchor-name); top: calc(anchor(bottom) + 5px); left: anchor(left); right: auto; position-try-fallbacks: flip-inline, flip-block, --po-fit-viewport-right; z-index: 100; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; width: 440px; max-width: min(460px, calc(100vw - 24px)); max-height: min(520px, calc(100vh - 140px)); padding: 8px; overflow: hidden auto; border: 0; border-radius: 10px; background: var(--dsw-specific-menu); backdrop-filter: var(--dsw-menu-backdrop-filter); color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family); font-size: var(--dsw-font-xxs-12-font-size); line-height: var(--dsw-font-xxs-12-line-height); box-shadow: var(--dsw-elevation-prominent); --dsw-elevation-stroke-color: var(--dsw-alias-border-l1); --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2); }
+
+@position-try --po-fit-viewport-right {
+  left: auto;
+  right: 12px;
+}
 
 .po-menu:focus {
   outline: none;

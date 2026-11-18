@@ -8,13 +8,14 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 
 ## 当前状态
 
-- 当前版本 **1.0.4**，面板定位已迁移到 CSS 锚点定位以适配 DSH 0.2.2；安装包与校验和见 [v1.0.4 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.4)。
+- 当前版本 **1.0.6** 支持自动交付最终文件。安装包见 [v1.0.6 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.6)。
 - 面向 DeepSeek Harness 0.2 系列；兼容性按插件真正调用的能力探测，而不是绑定某个精确的 Host 版本号。
 - 安装包存在、源码已升级、目标 profile 已加载是三种不同状态；以实际安装来源和宿主实际加载结果为准。
 
 ## 能做什么
 
 - **会话文件**：列出当前会话**已登记的实际文件**（原生 `present` 交付，以及成功的 `write`、`edit`、`str_replace_editor` 修改）。列表来自会话历史记录，可能保留后来被移动或删除的条目；报告 `artifacts[]` 里的文字不算文件登记。
+- **自动交付**。没有指定保存位置时，DSH 会使用 `.artifacts/project-ops/` 下的本轮专用目录。正常结束后，直接放在目录里的最终文件会同时出现在聊天和 Project Ops，包括 Python、Shell 生成的文件。自动登记会跳过临时文件、隐藏文件和符号链接。指定其他保存位置时，DSH 在原位置生成并调用原生 `present` 交付。
 - **分类浏览**：全部、方案、Word、Excel、PPT、PDF、图片、音视频、其他，按真实扩展名归类；`方案.docx` 属于 Word，不会被当成开发方案。
 - **原生预览**：点文件名交给宿主右侧栏的文件预览打开，不自己渲染文档；能否显示内容由宿主对该格式的支持决定。
 - **打开位置**：在访达中显示并选中该文件，随后可复制文件本身或拖到聊天窗口，而不是只拿到一段路径。

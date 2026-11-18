@@ -8,13 +8,14 @@ Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It pu
 
 ## Current state
 
-- Current version: **1.0.4**, which migrates the panel to CSS anchor positioning for DSH 0.2.2. Download the matching package and checksum from the [v1.0.4 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.4).
+- Current version **1.0.6** adds automatic delivery for final files. See the [v1.0.6 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.6) for the matching package.
 - Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
 - A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
 ## What you get
 
 - **Session files**: the files this conversation registered — native `present` deliveries plus successful `write`, `edit` and `str_replace_editor` changes. The list comes from session history and may keep entries later moved or deleted; text listed in an `artifacts[]` report is not a file record.
+- **Automatic delivery.** When you request files without naming a destination, DSH gets a folder for the turn under `.artifacts/project-ops/`. On normal completion, final files directly in that folder appear in the chat and Project Ops, including Python and shell outputs. Temporary files, hidden files and symlinks are skipped. For a destination you specify, DSH uses the native `present` tool.
 - **Categories**: All, Plans, Word, Excel, PPT, PDF, Images, Media, Other, chosen by real extension; `plan.docx` is a Word file, never a development plan.
 - **Native preview**: clicking a file name opens the Host's own right-sidebar file preview; whether content is rendered depends on the Host's support for that format.
 - **Show in folder**: reveals and selects the file in Finder so you can copy the file itself or drag it into a chat window — not just copy its path.

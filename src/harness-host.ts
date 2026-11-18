@@ -3,7 +3,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { JobId, JobView } from '@deepseek-ai/dsh-jobs'
 import type { ContentBlock, ToolCallId, ToolSchema } from '@deepseek-ai/dsh-llm'
-import type { ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { ToolExecutionInput, ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ProjectTask } from './contracts.ts'
 import type { ProjectOpsHost, RunArgs, CollectArgs, ExecutionResult } from './project-ops.ts'
@@ -24,6 +24,46 @@ const brandJobId = (value: string): JobId => value as JobId
 const brandToolCallId = (value: string): ToolCallId => value as ToolCallId
 
 const LOCKFILES = ['pnpm-lock.yaml', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'bun.lock', 'bun.lockb']
+
+type NestedToolInput = ToolExecutionInput & { toolSet?: unknown }
+type ToolSettlement = { kind: 'post-result' | 'final-result'; result: ToolExecutionResult }
+interface NestedToolPipeline {
+  prepare(input: NestedToolInput): Promise<{ exec: ToolRunContext } & ({ kind: 'dispatch' } | ToolSettlement)>
+  dispatch(exec: ToolRunContext): Promise<ToolSettlement>
+  complete(exec: ToolRunContext, outcome: ToolSettlement): Promise<ToolExecutionResult>
+}
+
+/** Dispatch one nested call through the Host's policy and result pipeline. */
+async function executeNestedTool(
+  ctx: Context,
+  parent: ToolRunContext,
+  callId: ToolCallId,
+  name: string,
+  args: Record<string, JsonValue>,
+): Promise<ToolExecutionResult> {
+  const input: NestedToolInput = {
+    callId,
+    rootCallId: parent.rootCallId,
+    name,
+    arguments: args,
+    ...(parent.agent === undefined ? {} : { agent: parent.agent }),
+    ...('toolSet' in parent && parent.toolSet !== undefined ? { toolSet: parent.toolSet } : {}),
+    parent: parent.token,
+    signal: parent.signal,
+  }
+  const tools = ctx.tools
+  // The newer registry's execute() accepts batches of root calls. Its public
+  // pipeline keeps the parent token and step admission on a nested call.
+  if (typeof (tools as { selectExecutor?: unknown }).selectExecutor !== 'function') return tools.execute(input)
+  const pipelinePath = '@deepseek-ai/dsh-tools/pipeline'
+  const { ToolExecutionPipeline } = await import(pipelinePath) as {
+    ToolExecutionPipeline: new (context: Context) => NestedToolPipeline
+  }
+  const pipeline = new ToolExecutionPipeline(ctx)
+  const prepared = await pipeline.prepare(input)
+  const outcome = prepared.kind === 'dispatch' ? await pipeline.dispatch(prepared.exec) : prepared
+  return pipeline.complete(prepared.exec, outcome)
+}
 
 /** Preserve official composite-tool control metadata on the enclosing result. */
 function forwardNestedResult(result: ToolExecutionResult, exec: ToolRunContext): void {
@@ -262,15 +302,8 @@ async function executeTask(ctx: Context, task: ProjectTask, args: RunArgs, exec:
   }
   exec.signal.throwIfAborted()
   const workdir = await taskWorkdir(ctx, cwd, task, exec.signal)
-  const result = await ctx.tools.execute({
-    callId: nestedCallId,
-    rootCallId: exec.rootCallId,
-    name: executorTool,
-    arguments: shellArguments(ctx, exec.agent, executorTool, command, workdir, background),
-    ...exec.agent === undefined ? {} : { agent: exec.agent },
-    parent: exec.token,
-    signal: exec.signal,
-  })
+  const result = await executeNestedTool(ctx, exec, nestedCallId, executorTool,
+    shellArguments(ctx, exec.agent, executorTool, command, workdir, background))
   forwardNestedResult(result, exec)
 
   const jobId = backgroundJobId(result)
@@ -438,8 +471,8 @@ export function createHarnessHost(ctx: Context, config: HarnessConfig = {}): Pro
     tools: call => ctx.tools.schemas(call.agent).map(tool => ({ source: 'tool', id: `tool:${tool.name}`, name: tool.name, description: tool.description })),
     async cancel(receipt, call) {
       if (!receipt.jobId) throw new Error('execution has no native background job')
-      const result = await ctx.tools.execute({ callId: brandToolCallId(`${call.callId}:project-ops:cancel`), rootCallId: call.rootCallId,
-        name: 'job_kill', arguments: { job_id: receipt.jobId }, agent: call.agent!, parent: call.token, signal: call.signal })
+      const result = await executeNestedTool(ctx, call, brandToolCallId(`${call.callId}:project-ops:cancel`),
+        'job_kill', { job_id: receipt.jobId })
       forwardNestedResult(result, call)
       if (result.isError) throw new Error('native cancellation failed')
     },
