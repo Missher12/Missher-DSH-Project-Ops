@@ -8,7 +8,7 @@ Project Ops is the `@missher/dsh-project-ops` plugin for DeepSeek Harness. It pu
 
 ## Current state
 
-- Current version **1.0.6** adds automatic delivery for final files. See the [v1.0.6 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.6) for the matching package.
+- Version **1.0.7** keeps the session-header entry as a compact icon. Download the package from the [v1.0.7 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.7).
 - Built for the DeepSeek Harness 0.2 series; compatibility is probed through the methods the plugin actually calls, not pinned to one exact Host version.
 - A package existing, the source being upgraded and a profile having loaded the plugin are three different states; trust the source you installed and what the Host actually loaded.
 
@@ -70,15 +70,15 @@ A short **Search** tab records this session's native search output; it is separa
 - A moved or deleted file keeps its row (history stays true); clicking preview or show-in-folder reports a short error so the user can deliver the file again.
 - When the Host lacks file indexing, native preview or desktop reveal, only that capability is turned off with a notice; the panel and the other entries keep working instead of disappearing.
 
-## Wide and narrow layouts
+## Session-header icon
 
 - The trigger matches the Host's session-header actions and uses `--dsw-*` theme tokens, so it follows light and dark themes.
-- With room, it shows the full **Project Ops** label and chevron; when the title row is 640px or narrower (at most 640px) the trigger keeps only the icon (28×28), hiding label and chevron.
-- The icon state keeps `title` and `aria-label` ("Project plans and files: N"), stays focusable with `Tab`, opens with `Enter` and closes with `Escape`; focus returns to the trigger.
+- The button stays 28 × 28 px at every width. Hover to see **Project Ops**, or click the icon to open the panel.
+- Press `Tab` to focus the icon, `Enter` to open the panel and `Escape` to close it and return focus to the icon.
 
 ## Verified scope
 
-Real install and UI acceptance this round ran on **DeepSeek Harness 0.2.1-rc.4 on macOS desktop**:
+Earlier desktop acceptance ran on **DeepSeek Harness 0.2.1-rc.4 on macOS**:
 
 - real Word and Excel files landed in the Word and Excel categories and opened in the native right-sidebar preview;
 - the files were still listed after a page refresh;

@@ -8,7 +8,7 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 
 ## 当前状态
 
-- 当前版本 **1.0.6** 支持自动交付最终文件。安装包见 [v1.0.6 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.6)。
+- **1.0.7** 将会话顶部入口设为常驻小图标。安装包见 [v1.0.7 Release](https://github.com/Missher12/Missher-DSH-Project-Ops/releases/tag/v1.0.7)。
 - 面向 DeepSeek Harness 0.2 系列；兼容性按插件真正调用的能力探测，而不是绑定某个精确的 Host 版本号。
 - 安装包存在、源码已升级、目标 profile 已加载是三种不同状态；以实际安装来源和宿主实际加载结果为准。
 
@@ -70,15 +70,15 @@ Project Ops 是 DeepSeek Harness 的会话插件 `@missher/dsh-project-ops`。�
 - 文件移动或删除后，行仍会保留（历史事实）；点击预览或打开位置会得到简短错误提示，用户可以据此重新交付文件。
 - 宿主缺少文件索引、原生预览或桌面定位能力时，只关闭对应能力并给出提示，面板与其他入口继续可用，不会整块消失。
 
-## 宽栏与窄栏
+## 会话顶部图标
 
 - 入口与宿主标题栏动作一致，使用 `--dsw-*` 主题变量，跟随亮/暗主题。
-- 标题行空间充足时显示完整 **Project Ops** 文字与下拉箭头；标题行缩到 640px 及以下时入口只保留图标（28px 见方），文字和箭头隐藏。
-- 图标态仍保留 `title` 与 `aria-label`（“项目方案与文件：N 项”），键盘 `Tab` 可聚焦、`Enter` 打开、`Escape` 关闭，关闭后焦点回到入口。
+- 宽栏和窄栏都使用 28 px 见方的小图标按钮。鼠标悬停显示 **Project Ops**，点击打开面板。
+- 按 `Tab` 聚焦图标，`Enter` 打开面板，`Escape` 关闭面板并回到图标。
 
 ## 已核验范围
 
-本轮在 **DeepSeek Harness 0.2.1-rc.4 / macOS 桌面**上做了真实安装与界面验收：
+早期的桌面验收使用 **DeepSeek Harness 0.2.1-rc.4 / macOS**：
 
 - 真实的 Word 与 Excel 文件分别归入 Word、Excel 分类，点文件名可打开右侧原生预览；
 - 刷新界面后文件仍在列表中；

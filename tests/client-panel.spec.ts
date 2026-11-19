@@ -152,17 +152,19 @@ test('opening a document reports the task and file to the preview opener', () =>
   expect(calls).toEqual([[task().id, 'READY.md']])
 })
 
-test('the trigger is a plain labelled button, not a browser default face', () => {
+test('the header entry is an icon button with a tooltip and accessible name', () => {
   const ref = { current: null }
   const tree = ProjectOpsTrigger({ t, open: false, count: 3, triggerRef: ref, onToggle: () => {} })
   const trigger = elements(tree)[0]!
-  const props = trigger.props as { className: string, 'aria-expanded': boolean, 'aria-haspopup': string, 'aria-label': string }
+  const props = trigger.props as { className: string, title: string, 'aria-expanded': boolean, 'aria-haspopup': string, 'aria-label': string }
   expect(trigger.type).toBe('button')
   expect(props.className).toBe(styles.trigger)
   expect(props['aria-expanded']).toBe(false)
   expect(props['aria-haspopup']).toBe('dialog')
   expect(props['aria-label']).toBe('项目方案与文件：3 项')
-  expect(text(tree)).toContain('Project Ops')
+  expect(text(tree).trim()).toBe('')
+  expect(elements(tree).filter(element => element.type === 'svg')).toHaveLength(1)
+  expect(props.title).toBe('Project Ops')
 })
 
 test('the panel reports loading, empty, error and truncated states distinctly', () => {

@@ -18,24 +18,21 @@
 }
 
 /*
- * Trigger: the native session-header action shape — transparent, borderless,
- * 28px tall, tertiary label that lifts to secondary on hover/focus. No
- * `background: Canvas` and no default button bevel.
+ * Trigger: the native 28px header action with a centered icon.
  */
 .po-trigger {
   display: inline-flex;
   anchor-name: var(--po-anchor-name);
+  flex: none;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 3px 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
   border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-family: var(--dsw-font-family);
-  font-size: var(--dsw-font-xxs-12-font-size);
-  line-height: var(--dsw-font-xxs-12-line-height);
   cursor: pointer;
 }
 
@@ -51,41 +48,6 @@
 
 .po-trigger-icon {
   flex: none;
-}
-
-.po-trigger-label {
-  /* Hosts without the shared header baseline keep the trigger alignment. */
-  align-self: var(--dsh-conversation-header-label-align, auto);
-  white-space: nowrap;
-}
-
-.po-trigger-chevron {
-  flex: none;
-  transition: transform 120ms ease;
-}
-
-.po-trigger-chevron-open {
-  transform: rotate(180deg);
-}
-
-/*
- * Narrow session header: keep only the icon before the label can squeeze the
- * session title or the other header actions. The Host makes the session title
- * row an inline-size container, so the query follows the conversation column —
- * window resize and an open right sidebar both count — not the browser viewport.
- * The button keeps its `title`, `aria-label`, focus and click behavior.
- */
-@container (width <= 640px) {
-  .po-trigger {
-    justify-content: center;
-    width: 28px;
-    padding: 0;
-  }
-
-  .po-trigger-label,
-  .po-trigger-chevron {
-    display: none;
-  }
 }
 
 /*

@@ -9,7 +9,7 @@
  */
 import type { CSSProperties, ReactElement, RefObject } from 'react'
 import {
-  IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconChevronDownOutlineRegular, IconCloseOutlineRegular,
+  IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconCloseOutlineRegular,
   IconDeliverDocRegular, IconInspectOutlineRegular, IconRefreshOutlineRegular, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,8 +35,7 @@ export interface TriggerProps {
 }
 
 /**
- * Session-header entry: a native 28px action button, not a browser default
- * button with a white face and a bevel.
+ * Session-header entry: a 28px icon button with a name on hover.
  * @param props - locale, open state, optional count, anchor ref and toggle.
  * @returns the trigger button.
  */
@@ -50,12 +49,10 @@ export function ProjectOpsTrigger({ t, open, count, triggerRef, onToggle }: Trig
       aria-expanded={open}
       aria-haspopup="dialog"
       aria-label={label}
-      title={label}
+      title={t('trigger.label')}
       onClick={onToggle}
     >
       <IconChecklistOutlineRegular size={14} className={styles.triggerIcon} />
-      <span className={styles.triggerLabel}>{t('trigger.label')}</span>
-      <IconChevronDownOutlineRegular size={12} className={classNames(styles.triggerChevron, open && styles.triggerChevronOpen)} />
     </button>
   )
 }
